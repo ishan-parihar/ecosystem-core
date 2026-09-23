@@ -24,11 +24,25 @@ import {
 	type EmailTheme,
 	type Logger,
 } from '@ishan/ecosystem-core';
+import { createSupabaseRecipientSource } from '@ishan/ecosystem-core/campaign';
+import {
+	getOrSet,
+	MemoryCache,
+	resolveCache,
+	type CacheStore,
+	type KvNamespaceLike,
+} from '@ishan/ecosystem-core/cache';
 import { PostgrestClient } from '@ishan/ecosystem-core/data';
-import { mountTurnstile } from '@ishan/ecosystem-core/http';
+import { createRateLimiter, mountTurnstile, RATE_LIMIT_POLICIES } from '@ishan/ecosystem-core/http';
+import { summarizeDelivery, summarizeByLane } from '@ishan/ecosystem-core/monitoring';
+import { createCacheLockoutStore, Lockout, lockoutKey } from '@ishan/ecosystem-core/security';
 import { mintToken, verifyToken } from '@ishan/ecosystem-core/subscribers';
+import { verifyTokenCompat } from '@ishan/ecosystem-core/tokens';
 
-declare const platformEnv: { EMAIL?: { send(message: unknown): Promise<unknown> }; KV?: unknown };
+declare const platformEnv: {
+	EMAIL?: { send(message: unknown): Promise<unknown> };
+	KV?: KvNamespaceLike;
+};
 declare const container: HTMLElement;
 
 const logger: Logger = silentLogger;
@@ -113,6 +127,37 @@ export async function buildCampaignEmail(input: {
 		html: wrapCampaignContent(input.bodyHtml, { theme, unsubscribeUrl }),
 		headers: listUnsubscribeHeaders(unsubscribeUrl),
 	};
+}
+
+/**
+ * Exercise every added subpath, so a release that does not ship one of them
+ * fails here rather than in whichever surface adopts it first.
+ */
+export async function exerciseModules(): Promise<string[]> {
+	const notes: string[] = [];
+
+	const cache: CacheStore = new MemoryCache({ maxEntries: 10 });
+	notes.push(`cache:${(await resolveCache({ kv: platformEnv.KV })).backend}`);
+	notes.push(`cached:${await getOrSet(cache, 'k', 60, async () => 'v')}`);
+
+	const { limiter, backend } = createRateLimiter({ kv: platformEnv.KV });
+	notes.push(`limiter:${backend}:${(await limiter.check('publicForm', 'ip')).limit}`);
+	notes.push(`policies:${Object.keys(RATE_LIMIT_POLICIES).length}`);
+
+	const lockout = new Lockout({ store: createCacheLockoutStore(cache), policy: 'authPassword' });
+	notes.push(`lockout:${(await lockout.recordFailure(lockoutKey('auth', 'a@b.co', '1.2.3.4'))).remainingAttempts}`);
+
+	const samples = [{ at: Date.now(), success: true, lane: 'transactional' as const }];
+	notes.push(`metrics:${summarizeDelivery(samples, { thresholds: { minSamples: 1 } }).successRate}`);
+	notes.push(`lanes:${Object.keys(summarizeByLane(samples).lanes).length}`);
+
+	// Legacy scheme accepted only when asked for; canonical always.
+	const canonical = await mintToken({ purpose: 'confirm', email: 'a@b.co' }, { secret: 's', expiresInSec: 0 });
+	const compat = await verifyTokenCompat(canonical, { secret: 's' });
+	notes.push(`compat:${compat.valid ? compat.scheme : 'rejected'}`);
+
+	notes.push(`recipients:${createSupabaseRecipientSource(db) ? 'ok' : 'null'}`);
+	return notes;
 }
 
 export async function roundTrip(email: string): Promise<boolean> {

@@ -5,12 +5,52 @@ of the public API, so a release that forces a consumer to read its own
 environment variables, or to construct a service at import scope, is recorded
 as breaking.
 
-## Unreleased
+## 0.3.0
 
-Repository infrastructure only. No change to the published artifact.
+Five new modules, and one behavioural fix that matters for consent.
+
+Minor rather than major: every existing export keeps its signature. The one
+additive change is that `RateLimitResult` now also reports `limit`, and it is
+declared once instead of twice.
 
 ### Added
 
+- **`./tokens`** - the signed-link primitive, lifted out of `subscribers` and
+generalised, plus `verifyTokenCompat`. The ecosystem had grown **three**
+implementations of this and they are **not** interchangeable even with a shared
+secret: this package signs the raw payload bytes, while the hub's
+`auth/tokens.ts` and `emailToken.ts` sign `base64url(payload)`. Verified rather
+than inferred - given an identical secret, each rejects the other's output with
+`bad_signature`. `verifyTokenCompat` accepts the canonical scheme, then the
+legacy one, and normalises the hub's short field aliases (`p`, `e`, `x`), so
+migration is: mint canonical, verify both, then drop `acceptLegacy`. It reports
+which scheme matched, so the legacy count can be watched to zero.
+- **`./cache`** - `MemoryCache` and `KvCache` behind one `CacheStore`, resolved
+by `resolveCache`. The hub's version was a module-level singleton keyed on the
+KV binding, which is a contract violation: a binding lives on
+`event.platform.env` and is per request. `resolveCache` reports both the backend
+it chose and why it degraded.
+- **`./campaign`** - recipient selection by `source` and `tags`, batched sending,
+and a **per-recipient signed unsubscribe link** with the RFC 8058 headers. This
+closes a live defect: the CMS built an unsigned `?email=<address>` link, so
+anyone who knew an address could unsubscribe it, and it sent no
+`List-Unsubscribe` headers at all. That bug had been written twice, in the hub
+and in the CMS, which is the argument for it existing once. Only `active` rows
+are selected, and `source` is not optional.
+- **`./security`** - brute-force lockout behind an injected `LockoutStore`. The
+hub's version is hard-wired to one table and typed `any` throughout. Behaviour
+is preserved, including the deliberate refusal to extend an active lock on
+further attempts: extending would let an attacker hold a legitimate user out
+indefinitely.
+- **`./monitoring`** - `summarizeDelivery`, a pure aggregator over injected
+samples. The hub's monitor is a module singleton that calls `setInterval` and
+registers `process.on('SIGTERM')`; none of that is valid in a Worker isolate.
+`summarizeByLane` keeps transactional and campaign delivery separate, because
+averaged together a transactional outage hides inside healthy campaign volume.
+- `FixedWindowRateLimiter` with `createRateLimiter`, over any `CacheStore`,
+plus `RATE_LIMIT_POLICIES` and `resolvePolicy` so surfaces stop inventing their
+own numbers. Asynchronous, because a KV read is; the existing synchronous
+`InMemoryRateLimiter` is unchanged and still exported.
 - `consumer-smoke/` - a throwaway consumer project that installs the package
   from a published tag and strict-typechecks every subpath. It is the only
   check that tests the artifact rather than the source. Verified not to be
@@ -19,12 +59,33 @@ Repository infrastructure only. No change to the published artifact.
   over plain HTTPS with no credentials and typechecks it. A release can no
   longer be published broken without a red run.
 
+### Fixed
+
+- **`exp: 0` no longer reads as expired.** Both the hub's signers and the
+  hub's own documentation use `exp: 0` to mean *never expires*, and unsubscribe
+  links rely on it, because a campaign email from two years ago must still be
+  able to honour the opt-out. Treating any numeric `exp` as an absolute time
+  made `nowSec >= 0` always true, so every such link read as expired. Caught by
+  the token test that reproduces the hub's algorithm with `node:crypto`.
+- A consumer wanting durability had no way to get it: the only limiter was
+  per-isolate. `FixedWindowRateLimiter` over `KvCache` shares one counter across
+  every isolate, which is the case a Worker surface actually has.
+
 ### Changed
 
 - Consumption documentation now specifies the **tag archive URL** rather than
   the `github:owner/repo#tag` shorthand. npm rewrites every GitHub git
   specifier to `git+ssh`, even an explicit `git+https`, which resolves on a
   machine with an SSH key and fails in CI without one.
+- `RateLimitResult` is declared once, in `rate-limiter.ts`, and both limiters
+  return it. It gains a `limit` field so a caller can build a correct
+  `Retry-After` without re-deriving the policy. Additive only.
+- Documentation now covers the **Node consumer** as well as the Cloudflare one.
+  A `node:` import is banned, so the same code runs in a Workers isolate and in
+  a plain process; `ishanparihar-cms` is a Node CLI and MCP server and needs the
+token and rendering half rather than the subscriber store. That recipe is also
+the body of `buildCampaignEmail` in the harness, so it is typechecked on every
+run instead of drifting.
 
 ## 0.2.1
 

@@ -1,55 +1,16 @@
 /**
- * Signed subscriber tokens.
+ * Backwards-compatible alias for the tokens module.
  *
- * Used for double opt-in confirmation and one-click unsubscribe. The secret is
- * injected; the purpose and TTL are parameters. Confirmation expires, the
- * unsubscribe link does not, which is the combination most privacy regimes
- * expect: a stale confirm link is harmless, a stale unsubscribe link is a
- * compliance problem.
+ * Signed tokens started life here, because double opt-in was the first thing
+ * that needed one. Meetings, password resets and campaign unsubscribe links
+ * need the same primitive, so the implementation moved to `src/tokens` and this
+ * file only re-exports it.
  *
- * Signing uses WebCrypto HMAC-SHA256 and verification uses
- * `crypto.subtle.verify`, which is constant-time, so a token cannot be
- * recovered by timing the comparison.
+ * It stays because `@ishan/ecosystem-core/subscribers` is a published subpath
+ * that consumers import directly, and removing an export from it would be a
+ * breaking change for a rename that no consumer asked for. New code should
+ * import from `@ishan/ecosystem-core/tokens`.
  */
-export interface TokenPayload {
-    /** Which link this token authorises. Checked on verify. */
-    purpose: string;
-    /** The bound address. */
-    email: string;
-    /** Epoch seconds. Absent means the token never expires. */
-    exp?: number;
-    [key: string]: unknown;
-}
-export type TokenVerifyReason = 'malformed' | 'bad_signature' | 'expired' | 'wrong_purpose';
-export type TokenVerifyResult = {
-    valid: true;
-    payload: TokenPayload;
-} | {
-    valid: false;
-    reason: TokenVerifyReason;
-};
-export interface MintTokenOptions {
-    secret: string;
-    /** Seconds until expiry. `0` or negative means the token never expires. */
-    expiresInSec: number;
-    /** Injectable clock in milliseconds. Defaults to `Date.now`. */
-    nowMs?: number;
-}
-export interface VerifyTokenOptions {
-    secret: string;
-    /** When set, a token minted for another purpose is rejected. */
-    expectedPurpose?: string;
-    /** Injectable clock in milliseconds. Defaults to `Date.now`. */
-    nowMs?: number;
-}
-/**
- * Mint a signed token.
- *
- * A secret shorter than 32 characters is accepted but the caller is expected
- * to validate its own environment; the package cannot know the deployment's
- * entropy policy.
- */
-export declare function mintToken(payload: TokenPayload, options: MintTokenOptions): Promise<string>;
-/** Verify a token's signature, purpose and expiry, in that order. */
-export declare function verifyToken(token: string, options: VerifyTokenOptions): Promise<TokenVerifyResult>;
+export type { MintTokenOptions, TokenPayload, TokenScheme, TokenVerifyReason, TokenVerifyResult, VerifyTokenCompatOptions, VerifyTokenOptions, } from '../tokens/index.js';
+export { mintToken, verifyToken, verifyTokenCompat } from '../tokens/index.js';
 //# sourceMappingURL=tokens.d.ts.map

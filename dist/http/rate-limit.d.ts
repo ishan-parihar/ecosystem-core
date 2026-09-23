@@ -15,11 +15,7 @@
  * class shape is fixed even though the default is in-memory.
  */
 import type { Logger } from '../internal/logger.js';
-export interface RateLimitResult {
-    allowed: boolean;
-    remaining: number;
-    retryAfterSec: number;
-}
+import type { RateLimitResult } from './rate-limiter.js';
 export interface RateLimiterOptions {
     /** Upper bound on tracked keys, so a flood of unique keys cannot grow memory. */
     maxKeys?: number;

@@ -44,7 +44,7 @@ export class InMemoryRateLimiter {
         const current = this.windows.get(key);
         if (!current || now - current.startedAt >= windowMs) {
             this.windows.set(key, { count: 1, startedAt: now });
-            return { allowed: true, remaining: limit - 1, retryAfterSec: 0 };
+            return { allowed: true, remaining: Math.max(0, limit - 1), retryAfterSec: 0, limit };
         }
         if (current.count >= limit) {
             const elapsed = now - current.startedAt;
@@ -52,10 +52,11 @@ export class InMemoryRateLimiter {
                 allowed: false,
                 remaining: 0,
                 retryAfterSec: Math.max(1, Math.ceil((windowMs - elapsed) / 1000)),
+                limit,
             };
         }
         current.count += 1;
-        return { allowed: true, remaining: limit - current.count, retryAfterSec: 0 };
+        return { allowed: true, remaining: Math.max(0, limit - current.count), retryAfterSec: 0, limit };
     }
     evictIfOversized(now, windowMs) {
         if (this.windows.size <= this.maxKeys)

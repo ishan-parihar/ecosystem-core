@@ -1,7 +1,7 @@
 {
 	"name": "@ishan/ecosystem-core",
-	"version": "0.2.1",
-	"description": "Shared, injected core for the Ishan Parihar ecosystem surfaces: email transport, the subscriber store and its tokens, a PostgREST client, the Supabase subscriber adapter, and abuse-handling primitives. No SvelteKit virtual modules, no module-level singletons.",
+	"version": "0.3.0",
+	"description": "Shared, injected core for the Ishan Parihar ecosystem surfaces: email transport, signed tokens, the subscriber store, campaigns, a cache and KV-backed rate limiting, brute-force lockout, delivery metrics, and a PostgREST client. No SvelteKit virtual modules, no module-level singletons.",
 	"private": true,
 	"type": "module",
 	"license": "UNLICENSED",
@@ -31,6 +31,26 @@
 		"./subscribers": {
 			"types": "./dist/subscribers/index.d.ts",
 			"default": "./dist/subscribers/index.js"
+		},
+		"./tokens": {
+			"types": "./dist/tokens/index.d.ts",
+			"default": "./dist/tokens/index.js"
+		},
+		"./security": {
+			"types": "./dist/security/index.d.ts",
+			"default": "./dist/security/index.js"
+		},
+		"./monitoring": {
+			"types": "./dist/monitoring/index.d.ts",
+			"default": "./dist/monitoring/index.js"
+		},
+		"./campaign": {
+			"types": "./dist/campaign/index.d.ts",
+			"default": "./dist/campaign/index.js"
+		},
+		"./cache": {
+			"types": "./dist/cache/index.d.ts",
+			"default": "./dist/cache/index.js"
 		},
 		"./data": {
 			"types": "./dist/data/index.d.ts",

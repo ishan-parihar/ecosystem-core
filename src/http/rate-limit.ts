@@ -18,17 +18,15 @@
 import { sha256Hex } from '../internal/hash.js';
 import type { Logger } from '../internal/logger.js';
 import { silentLogger } from '../internal/logger.js';
+// One result type for both limiters. The durable one in `rate-limiter.ts` also
+// reports the limit that applied, and this class returns the same shape so a
+// caller can switch between them without touching its handling of a refusal.
+import type { RateLimitResult } from './rate-limiter.js';
 
 interface Window {
 	count: number;
 	/** Epoch milliseconds when the current window opened. */
 	startedAt: number;
-}
-
-export interface RateLimitResult {
-	allowed: boolean;
-	remaining: number;
-	retryAfterSec: number;
 }
 
 export interface RateLimiterOptions {
@@ -72,7 +70,7 @@ export class InMemoryRateLimiter {
 		const current = this.windows.get(key);
 		if (!current || now - current.startedAt >= windowMs) {
 			this.windows.set(key, { count: 1, startedAt: now });
-			return { allowed: true, remaining: limit - 1, retryAfterSec: 0 };
+			return { allowed: true, remaining: Math.max(0, limit - 1), retryAfterSec: 0, limit };
 		}
 
 		if (current.count >= limit) {
@@ -81,11 +79,12 @@ export class InMemoryRateLimiter {
 				allowed: false,
 				remaining: 0,
 				retryAfterSec: Math.max(1, Math.ceil((windowMs - elapsed) / 1000)),
+				limit,
 			};
 		}
 
 		current.count += 1;
-		return { allowed: true, remaining: limit - current.count, retryAfterSec: 0 };
+		return { allowed: true, remaining: Math.max(0, limit - current.count), retryAfterSec: 0, limit };
 	}
 
 	private evictIfOversized(now: number, windowMs: number): void {

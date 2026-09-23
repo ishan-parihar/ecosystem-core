@@ -8,11 +8,28 @@ client, the Supabase subscriber adapter, and the abuse-handling primitives.
 ```text
 src/
   email/          providers (cloudflare, resend, gmail, mock), renderer, service
-  subscribers/    state machine, tokens, Supabase adapter, store contract
+  subscribers/    state machine, Supabase adapter, store contract
+  tokens/         signed links: confirm, unsubscribe, reset, guest access
+  campaign/       recipient selection by source and tag, batched send
+  cache/          KV and in-isolate stores behind one interface
+  http/           rate limiters, Turnstile, IP hashing
+  security/       brute-force lockout
+  monitoring/     delivery metrics, as a pure function
   data/           PostgREST client
-  http/           rate limiter, Turnstile, IP hashing
   internal/       base64, hashing, logger
 ```
+
+Each module exists because the same code had already been written more than
+once, in more than one repository. Two are worth calling out:
+
+- **`tokens/`** replaces **three** incompatible implementations. They are not
+  interchangeable even with a shared secret: this package signs the raw payload
+  bytes while the hub signs `base64url(payload)`, so each rejects the other with
+  `bad_signature`. `verifyTokenCompat` accepts both during migration and reports
+  which scheme matched.
+- **`campaign/`** exists because an unsigned `?email=<address>` unsubscribe link
+  was written **twice**. Every campaign message now carries its own signed
+  token plus the RFC 8058 headers.
 
 ## Why this exists
 
@@ -93,9 +110,20 @@ builds from the repository root and a sibling directory will not exist there:
 |---|---|
 | `@ishan/ecosystem-core` | everything |
 | `@ishan/ecosystem-core/email` | providers and rendering only |
-| `@ishan/ecosystem-core/subscribers` | store, tokens, Supabase adapter |
+| `@ishan/ecosystem-core/subscribers` | store and Supabase adapter |
+| `@ishan/ecosystem-core/tokens` | signed links and the legacy verifier |
+| `@ishan/ecosystem-core/campaign` | recipient selection and batched send |
+| `@ishan/ecosystem-core/cache` | KV or in-memory store, and `getOrSet` |
+| `@ishan/ecosystem-core/http` | rate limiting, policies, Turnstile |
+| `@ishan/ecosystem-core/security` | brute-force lockout |
+| `@ishan/ecosystem-core/monitoring` | delivery metrics |
 | `@ishan/ecosystem-core/data` | PostgREST client |
-| `@ishan/ecosystem-core/http` | rate limiting and Turnstile |
+
+Subpath exports are the configuration mechanism: a surface imports the modules
+it enables and nothing else, so a surface with no newsletter never pulls in the
+subscriber store. Where behaviour needs to vary, it is an argument rather than a
+branch inside the package: `resolveCache({ backend })`,
+`resolvePolicy(name, overrides)`, `verifyToken(token, { acceptLegacy })`.
 
 ## Usage
 
