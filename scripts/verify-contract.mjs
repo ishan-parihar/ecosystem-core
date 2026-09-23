@@ -166,6 +166,31 @@ if (statSync(lockPath, { throwIfNoEntry: false })) {
 	}
 }
 
+// The consumer harness must not declare the package it is testing.
+//
+// It exists to typecheck the artifact a published tag actually contains, and CI
+// installs that tag with an explicit `npm install <tag-url>` (see
+// .github/workflows/ci.yml). If the manifest ever gains a `dependencies` entry,
+// npm resolves that pinned version instead, the harness silently stops testing
+// the tag under test, and it still reports PASS. That is a harness that lies,
+// which is worse than no harness; a passing typecheck must mean the tag works.
+const smokeManifestPath = join(ROOT, 'consumer-smoke', 'package.json');
+if (statSync(smokeManifestPath, { throwIfNoEntry: false })) {
+	const smoke = JSON.parse(readFileSync(smokeManifestPath, 'utf8'));
+	const pinned = ['dependencies', 'devDependencies', 'peerDependencies'].filter(
+		(field) => Object.keys(smoke[field] ?? {}).length > 0,
+	);
+	if (pinned.length > 0) {
+		violations.push({
+			file: 'consumer-smoke/package.json',
+			line: 1,
+			rule: 'consumer harness pins a version',
+			hint: 'Remove the dependency. CI installs the published tag with an explicit `npm install <tag-url>`; a declared entry shadows it and the harness stops testing the release.',
+			text: pinned.map((field) => `${field}: ${JSON.stringify(smoke[field])}`).join(' '),
+		});
+	}
+}
+
 // dist/ must stay committed, because a consumer installs this package without
 // running any install script.
 const gitignore = readFileSync(join(ROOT, '.gitignore'), 'utf8');
