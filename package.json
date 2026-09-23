@@ -1,6 +1,6 @@
 {
 	"name": "@ishan/ecosystem-core",
-	"version": "0.2.0",
+	"version": "0.2.1",
 	"description": "Shared, injected core for the Ishan Parihar ecosystem surfaces: email transport, the subscriber store and its tokens, a PostgREST client, the Supabase subscriber adapter, and abuse-handling primitives. No SvelteKit virtual modules, no module-level singletons.",
 	"private": true,
 	"type": "module",
@@ -55,8 +55,5 @@
 	"devDependencies": {
 		"typescript": "^5.7.0",
 		"vitest": "^4.1.6"
-	},
-	"dependencies": {
-		"@ishan/ecosystem-core": "file:.consumer-test/ishan-ecosystem-core-0.2.0.tgz"
 	}
 }

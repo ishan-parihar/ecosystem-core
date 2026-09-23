@@ -5,6 +5,25 @@ of the public API, so a release that forces a consumer to read its own
 environment variables, or to construct a service at import scope, is recorded
 as breaking.
 
+## 0.2.1
+
+### Fixed
+
+- **`v0.2.0` cannot be installed. Use `v0.2.1` or later.** `package.json` in
+  v0.2.0 carried a `dependencies` block pointing at
+  `file:.consumer-test/ishan-ecosystem-core-0.2.0.tgz`, a local test tarball,
+  and `package-lock.json` recorded the matching self-reference. npm clones a
+  git dependency and honours its committed lock, so every consumer install
+  failed with an `ENOENT` for a path that existed only on the machine that
+  created it. The tag is left in place rather than rewritten; it is marked here
+  so it is not picked up by mistake.
+- Root cause and prevention: the package declares **no runtime dependencies by
+  design**, which is now enforced. `npm run contract` fails when `package.json`
+  gains a `dependencies`, `peerDependencies` or `optionalDependencies` entry,
+  when any `file:` specifier appears in the manifest, when the lockfile records
+  a self-reference, or when `dist` is added back to `.gitignore`. The guard was
+  verified to fire on the exact defect above, not merely to pass when clean.
+
 ## 0.2.0
 
 Promoted from a pilot that one surface consumed to the ecosystem's shared

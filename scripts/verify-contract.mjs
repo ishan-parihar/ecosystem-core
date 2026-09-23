@@ -112,12 +112,81 @@ for (const file of walk(SRC)) {
 	}
 }
 
+/*
+ * Manifest invariants.
+ *
+ * The package is dependency-free at runtime, and that is not an accident worth
+ * leaving unguarded. A bare `npm install <tarball>` run in this directory adds
+ * a self-dependency to `package.json`, and the resulting lockfile then makes
+ * every consumer's install fail with an ENOENT on a path that only exists on
+ * the machine that ran it. That happened once; this check is why it cannot
+ * happen twice.
+ */
+const manifest = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+const dependencyFields = ['dependencies', 'peerDependencies', 'optionalDependencies'];
+
+for (const field of dependencyFields) {
+	const entries = Object.entries(manifest[field] ?? {});
+	if (entries.length > 0) {
+		violations.push({
+			file: 'package.json',
+			line: 1,
+			rule: `runtime ${field}`,
+			hint: 'This package is dependency-free by design. Move the dependency to the consumer.',
+			text: `${field}: ${JSON.stringify(manifest[field])}`,
+		});
+	}
+}
+
+// A `file:` specifier anywhere makes a consumer depend on a local checkout,
+// and a self-reference additionally breaks the lockfile.
+const manifestText = readFileSync(join(ROOT, 'package.json'), 'utf8');
+if (/"file:/.test(manifestText)) {
+	violations.push({
+		file: 'package.json',
+		line: 1,
+		rule: 'file: dependency specifier',
+		hint: 'A file: reference cannot resolve for any other checkout. Use a git tag.',
+		text: manifestText.split('\n').find((l) => l.includes('"file:'))?.trim() ?? '',
+	});
+}
+
+const lockPath = join(ROOT, 'package-lock.json');
+if (statSync(lockPath, { throwIfNoEntry: false })) {
+	const lock = JSON.parse(readFileSync(lockPath, 'utf8'));
+	const selfRefs = Object.keys(lock.packages ?? {}).filter((k) => k.includes('ecosystem-core'));
+	if (selfRefs.length > 0 || JSON.stringify(lock.packages?.['']?.dependencies ?? {}).includes('file:')) {
+		violations.push({
+			file: 'package-lock.json',
+			line: 1,
+			rule: 'self-referential lockfile',
+			hint: 'Delete package-lock.json and run `npm install` after fixing package.json.',
+			text: selfRefs.join(', '),
+		});
+	}
+}
+
+// dist/ must stay committed, because a consumer installs this package without
+// running any install script.
+const gitignore = readFileSync(join(ROOT, '.gitignore'), 'utf8');
+if (/^\s*dist\s*$/m.test(gitignore)) {
+	violations.push({
+		file: '.gitignore',
+		line: 1,
+		rule: 'dist is gitignored',
+		hint: 'dist/ is committed so consumers need no build step. Remove it from .gitignore.',
+		text: 'dist',
+	});
+}
+
 if (violations.length === 0) {
-	console.log(`injection contract: OK (${filesChecked} files checked, 0 violations)`);
+	console.log(
+		`contract: OK (${filesChecked} source files, manifest invariants, 0 violations)`,
+	);
 	process.exit(0);
 }
 
-console.error(`injection contract: FAILED (${violations.length} violation(s))\n`);
+console.error(`contract: FAILED (${violations.length} violation(s))\n`);
 for (const v of violations) {
 	console.error(`  ${v.file}:${v.line}  [${v.rule}]`);
 	console.error(`    ${v.text}`);
