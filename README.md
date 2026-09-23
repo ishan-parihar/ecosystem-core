@@ -122,6 +122,62 @@ The theme is data, not a fork: one renderer serves every surface, and each
 surface supplies its own colours. That is how brand sovereignty stays real
 without duplicating code.
 
+## Consumers that are not Cloudflare Pages
+
+Nothing here imports a framework module, and `node:` builtins are banned, so
+the same package runs in a Workers isolate and in a plain Node process. That is
+the point: two different kinds of consumer share one implementation.
+
+- **A SvelteKit surface on Cloudflare Pages** reads its configuration from
+  `platform.env` per request and uses the whole stack - providers, renderer,
+  store, Supabase adapter.
+- **A Node process** (`ishanparihar-cms` is a CLI and an MCP server) reads
+  `process.env` once at startup and usually wants only part of it.
+
+The second case is typically the token and rendering half. A campaign sender
+does **not** want the subscriber store; it needs to mint an unsubscribe link
+that the receiving surface can verify, and to render the body in the same shell
+so the letterhead matches:
+
+```ts
+import {
+  mintToken, createEmailService, wrapCampaignContent, listUnsubscribeHeaders, silentLogger,
+} from '@ishan/ecosystem-core';
+
+const secret = process.env.NEWSLETTER_TOKEN_SECRET ?? '';
+if (!secret) throw new Error('NEWSLETTER_TOKEN_SECRET is required to mint unsubscribe links');
+
+// expiresInSec: 0 means the link never expires. That is the contract for
+// unsubscribe, and the opposite of the confirm token.
+const unsubscribeUrl = `https://<surface>/newsletter/unsubscribe?token=${encodeURIComponent(
+  await mintToken({ purpose: 'newsletter_unsubscribe', email: address }, { secret, expiresInSec: 0 }),
+)}`;
+
+const html = wrapCampaignContent(bodyHtml, { theme, unsubscribeUrl });
+const service = createEmailService({
+  provider: 'resend', from, fromName, replyTo, theme,
+  resendApiKey: process.env.RESEND_API_KEY, logger: silentLogger,
+});
+await service.send({
+  to: address,
+  subject,
+  html,
+  headers: listUnsubscribeHeaders(unsubscribeUrl),
+});
+```
+
+Two rules make the split across processes safe:
+
+- `purpose` is inside the signed payload, so a confirm token cannot be
+  presented as an unsubscribe token, or the reverse.
+- `NEWSLETTER_TOKEN_SECRET` must be **identical** in the process that mints a
+  link and the surface that verifies it. A per-surface value silently breaks
+  every campaign unsubscribe while leaving the link looking valid.
+
+Verified on Node 24, outside Workers: token mint and verify, cross-purpose and
+tamper rejection, shell rendering, RFC 8058 headers, the mock provider, the rate
+limiter, and the contact template. A consumer that only typechecks is not proven.
+
 ## Scripts
 
 ```bash

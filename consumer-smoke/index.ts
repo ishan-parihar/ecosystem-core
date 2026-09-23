@@ -16,9 +16,11 @@ import {
 	createPostgrest,
 	createSupabaseSubscriberTable,
 	InMemoryRateLimiter,
+	listUnsubscribeHeaders,
 	SubscriberStore,
 	silentLogger,
 	verifyTurnstile,
+	wrapCampaignContent,
 	type EmailTheme,
 	type Logger,
 } from '@ishan/ecosystem-core';
@@ -86,6 +88,32 @@ export const limiter = new InMemoryRateLimiter({ logger });
 export const teardown = (): void => {
 	mountTurnstile(container, 'site-key', () => undefined)();
 };
+
+/**
+ * The non-Cloudflare consumer, same shape the README documents.
+ *
+ * `ishanparihar-cms` is a Node process, not a Workers isolate, and it needs the
+ * token and rendering half of the package rather than the subscriber store: it
+ * mints the unsubscribe link a surface will later verify. Keeping this here
+ * means the README's Node recipe is compiled on every run instead of rotting.
+ */
+export async function buildCampaignEmail(input: {
+	address: string;
+	subject: string;
+	bodyHtml: string;
+	secret: string;
+	surfaceUrl: string;
+}): Promise<{ html: string; headers: ReturnType<typeof listUnsubscribeHeaders> }> {
+	const token = await mintToken(
+		{ purpose: 'newsletter_unsubscribe', email: input.address },
+		{ secret: input.secret, expiresInSec: 0 },
+	);
+	const unsubscribeUrl = `${input.surfaceUrl}/newsletter/unsubscribe?token=${encodeURIComponent(token)}`;
+	return {
+		html: wrapCampaignContent(input.bodyHtml, { theme, unsubscribeUrl }),
+		headers: listUnsubscribeHeaders(unsubscribeUrl),
+	};
+}
 
 export async function roundTrip(email: string): Promise<boolean> {
 	const token = await mintToken(
