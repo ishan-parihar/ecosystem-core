@@ -1,0 +1,62 @@
+{
+	"name": "@ishan/ecosystem-core",
+	"version": "0.2.0",
+	"description": "Shared, injected core for the Ishan Parihar ecosystem surfaces: email transport, the subscriber store and its tokens, a PostgREST client, the Supabase subscriber adapter, and abuse-handling primitives. No SvelteKit virtual modules, no module-level singletons.",
+	"private": true,
+	"type": "module",
+	"license": "UNLICENSED",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/ishan-parihar/ecosystem-core.git"
+	},
+	"engines": {
+		"node": ">=20"
+	},
+	"sideEffects": false,
+	"files": [
+		"dist",
+		"src",
+		"README.md",
+		"CHANGELOG.md"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		},
+		"./email": {
+			"types": "./dist/email/index.d.ts",
+			"default": "./dist/email/index.js"
+		},
+		"./subscribers": {
+			"types": "./dist/subscribers/index.d.ts",
+			"default": "./dist/subscribers/index.js"
+		},
+		"./data": {
+			"types": "./dist/data/index.d.ts",
+			"default": "./dist/data/index.js"
+		},
+		"./http": {
+			"types": "./dist/http/index.d.ts",
+			"default": "./dist/http/index.js"
+		},
+		"./package.json": "./package.json"
+	},
+	"types": "./dist/index.d.ts",
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc -p tsconfig.json --noEmit",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"contract": "node scripts/verify-contract.mjs",
+		"verify": "npm run contract && npm run typecheck && npm run build && npm run test",
+		"prepare": "npm run build"
+	},
+	"devDependencies": {
+		"typescript": "^5.7.0",
+		"vitest": "^4.1.6"
+	},
+	"dependencies": {
+		"@ishan/ecosystem-core": "file:.consumer-test/ishan-ecosystem-core-0.2.0.tgz"
+	}
+}
