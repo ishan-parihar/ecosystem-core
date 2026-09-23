@@ -1,4 +1,5 @@
 node_modules
 *.tsbuildinfo
-.consumer-test
+consumer-smoke/node_modules
+consumer-smoke/package-lock.json
 *.tgz

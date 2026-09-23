@@ -47,10 +47,23 @@ reaches an application only when that application asks for it.
 // package.json
 {
 	"dependencies": {
-		"@ishan/ecosystem-core": "github:ishan-parihar/ecosystem-core#v0.2.0"
+		"@ishan/ecosystem-core": "https://github.com/ishan-parihar/ecosystem-core/archive/refs/tags/v0.2.1.tar.gz"
 	}
 }
 ```
+
+Use the **tag archive URL**, not the `github:owner/repo#tag` shorthand. Two
+reasons, both found by trying it:
+
+1. npm rewrites every GitHub git specifier to `git+ssh`, even when you write
+   `git+https` explicitly. That resolves on a developer machine with an SSH key
+   and fails on a CI runner without one, which is the worst way for a
+   dependency to be wrong.
+2. The archive URL is plain HTTPS over a public repository. No credentials, no
+   SSH key, no git installed at all.
+
+Avoid `github:ishan-parihar/ecosystem-core#v0.2.0` in particular: that release
+cannot be installed. See the changelog.
 
 A `github:` dependency resolves on Cloudflare Pages with **no extra CI
 configuration**, because `dist/` is committed. A consumer installs JavaScript
@@ -69,7 +82,7 @@ unchanged, or the build fails with `dist/ is stale`. Contributors run
 `npm run build` and commit `dist/` alongside `src/`.
 
 During local development against an unpublished change, point at a checkout
-instead — but **never commit a `file:` reference**, because Cloudflare Pages
+instead - but **never commit a `file:` reference**, because Cloudflare Pages
 builds from the repository root and a sibling directory will not exist there:
 
 ```jsonc
@@ -118,6 +131,34 @@ npm run build       # tsc -> dist
 npm run test        # vitest
 npm run verify      # all four, in order
 ```
+
+## Verifying a release reaches consumers
+
+`consumer-smoke/` is a throwaway project that knows nothing about this
+repository. It is the only check here that tests the artifact rather than the
+source: it installs the package from a published tag and typechecks every
+subpath against it under `strict`.
+
+```bash
+cd consumer-smoke
+npm install --no-audit --no-fund \
+  https://github.com/ishan-parihar/ecosystem-core/archive/refs/tags/v0.2.1.tar.gz
+../node_modules/.bin/tsc -p tsconfig.json
+```
+
+CI runs exactly this on every tag. To confirm the check is not vacuous, hide the
+installed package and re-run: it must fail with `TS2307: Cannot find module`.
+It does.
+
+### One trap worth knowing about
+
+Run consumer experiments in a directory whose name is a **valid package name**.
+`npm init -y` fails with `Invalid name: ".consumer-test"` when the directory
+starts with a dot, and npm then resolves `npm install` against the nearest
+`package.json` *upward* - which silently adds the dependency to this package
+instead. That is not hypothetical; it is exactly how the unusable `v0.2.0`
+release was created. `npm run contract` now fails on the resulting manifest, so
+the mistake is caught before it can be committed again.
 
 ## Versioning
 

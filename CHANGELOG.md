@@ -5,6 +5,27 @@ of the public API, so a release that forces a consumer to read its own
 environment variables, or to construct a service at import scope, is recorded
 as breaking.
 
+## Unreleased
+
+Repository infrastructure only. No change to the published artifact.
+
+### Added
+
+- `consumer-smoke/` - a throwaway consumer project that installs the package
+  from a published tag and strict-typechecks every subpath. It is the only
+  check that tests the artifact rather than the source. Verified not to be
+  vacuous: hiding the installed package makes it fail with `TS2307`.
+- A `published-artifact` CI job, run on tag pushes only, that installs the tag
+  over plain HTTPS with no credentials and typechecks it. A release can no
+  longer be published broken without a red run.
+
+### Changed
+
+- Consumption documentation now specifies the **tag archive URL** rather than
+  the `github:owner/repo#tag` shorthand. npm rewrites every GitHub git
+  specifier to `git+ssh`, even an explicit `git+https`, which resolves on a
+  machine with an SSH key and fails in CI without one.
+
 ## 0.2.1
 
 ### Fixed
@@ -31,29 +52,29 @@ infrastructure, and lifted out of the consuming repository into its own.
 
 ### Added
 
-- `data/postgrest` — a minimal PostgREST client with an injected logger:
+- `data/postgrest` - a minimal PostgREST client with an injected logger:
   `select`, `selectOne`, `count`, `insert`, `insertMany`, `update`, `remove`
   and `rpc`. Returns `null` from `createPostgrest` when the project is not
   configured, rather than throwing.
-- `data/postgrest` — `filterValue` and `likePattern`, so a user-supplied search
+- `data/postgrest` - `filterValue` and `likePattern`, so a user-supplied search
   term cannot change the shape of a PostgREST filter expression.
-- `subscribers/supabase-table` — `SupabaseSubscriberTable` and
+- `subscribers/supabase-table` - `SupabaseSubscriberTable` and
   `createSupabaseSubscriberTable`. This is the mapping every surface was going
   to write for itself: the shared column list, the status narrowing, and the
   `undefined`-elision rule that keeps "leave the column alone" distinct from
   "clear the column".
-- `http/rate-limit` — `InMemoryRateLimiter`, a fixed-window counter with bounded
+- `http/rate-limit` - `InMemoryRateLimiter`, a fixed-window counter with bounded
   memory. A class rather than a module-level map, so a surface can swap the
   backing store without changing the call site.
-- `http/rate-limit` — `hashIp`, `clientIp`, and `verifyTurnstile`.
-- `internal/hash` — `sha256Hex` and `timingSafeEqual`.
-- `internal/logger` — one `Logger` type shared by every module, so a consumer
+- `http/rate-limit` - `hashIp`, `clientIp`, and `verifyTurnstile`.
+- `internal/hash` - `sha256Hex` and `timingSafeEqual`.
+- `internal/logger` - one `Logger` type shared by every module, so a consumer
   passes a single logger and it type-checks across email, data and HTTP.
-- `npm run contract` — an enforced check for the injection contract, with a
+- `npm run contract` - an enforced check for the injection contract, with a
   negative test proving it fires. Comments are stripped before scanning, so a
   doc comment may discuss the banned modules.
 - Subpath exports: `/email`, `/subscribers`, `/data`, `/http`.
-- `http/turnstile-widget` — the lazy script loader and `mountTurnstile`, moved
+- `http/turnstile-widget` - the lazy script loader and `mountTurnstile`, moved
   out of the consuming application because every surface with a form needs the
   same dedupe. It reads the browser global structurally instead of augmenting
   `Window`, so it imposes no ambient declaration on consumers.
@@ -90,8 +111,8 @@ Verified 2026-09-23, replacing figures that were previously second-hand:
 The pilot. Extracted from `ishanparihar-svelte` so the technical authority
 surface would not duplicate a newsletter system that already existed.
 
-- `email/` — the provider contract, the renderer with a theme argument, and
+- `email/` - the provider contract, the renderer with a theme argument, and
   four providers: `cloudflare`, `resend`, `gmail`, `mock`.
-- `subscribers/` — the double opt-in state machine, HMAC-signed confirm and
+- `subscribers/` - the double opt-in state machine, HMAC-signed confirm and
   unsubscribe tokens, and the `SubscriberTable` storage contract.
 - 64 unit tests.

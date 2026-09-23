@@ -65,3 +65,29 @@ jobs:
             }
             console.log('consumer resolution: OK');
           "
+
+  # The steps above prove the package is buildable. This proves the thing
+  # consumers actually receive: the published tag, installed over plain HTTPS
+  # with no credentials, typechecked by a strict project that knows nothing
+  # about this repository. It runs only on a tag, because that is the only time
+  # the artifact it tests exists.
+  published-artifact:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci --ignore-scripts
+
+      - name: Install the published tag from scratch and typecheck it
+        run: |
+          cd consumer-smoke
+          npm install --no-audit --no-fund \
+            "https://github.com/${{ github.repository }}/archive/refs/tags/${{ github.ref_name }}.tar.gz"
+          ../node_modules/.bin/tsc -p tsconfig.json
+          echo 'published artifact resolves and typechecks for a fresh consumer'

@@ -1,0 +1,8 @@
+{
+	"name": "ecosystem-core-consumer-smoke",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"description": "Throwaway consumer harness, gitignored except for its manifest and index.ts. Installs @ishan/ecosystem-core from a published tag and typechecks every subpath against it. See the README section on verifying a release.",
+	"comment": "The package is installed by tag, not declared here, so this file cannot pin a stale version. See .github/workflows/ci.yml for the exact install command."
+}
