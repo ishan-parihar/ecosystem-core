@@ -38,10 +38,24 @@ import { summarizeDelivery, summarizeByLane } from '@ishan/ecosystem-core/monito
 import { createCacheLockoutStore, Lockout, lockoutKey } from '@ishan/ecosystem-core/security';
 import { mintToken, verifyToken } from '@ishan/ecosystem-core/subscribers';
 import { verifyTokenCompat } from '@ishan/ecosystem-core/tokens';
+import {
+	createRazorpayClient,
+	RazorpayApiError,
+	type RazorpayClient,
+} from '@ishan/ecosystem-core/payments';
+import {
+	createSessionService,
+	hasPermission,
+	hasPremiumAccess,
+	resolveRole,
+	type ProfileLike,
+	type SessionUser,
+} from '@ishan/ecosystem-core/auth';
 
 declare const platformEnv: {
 	EMAIL?: { send(message: unknown): Promise<unknown> };
 	KV?: KvNamespaceLike;
+	RAZORPAY_WEBHOOK_SECRET?: string;
 };
 declare const container: HTMLElement;
 
@@ -157,8 +171,51 @@ export async function exerciseModules(): Promise<string[]> {
 	notes.push(`compat:${compat.valid ? compat.scheme : 'rejected'}`);
 
 	notes.push(`recipients:${createSupabaseRecipientSource(db) ? 'ok' : 'null'}`);
+
+	notes.push(
+		`payments:${await razorpay.verifyPaymentSignature('order_1', 'pay_1', 'deadbeef')}`,
+	);
+	notes.push(
+		`webhook:${await razorpay.verifyWebhookSignature('{}', 'deadbeef')}`,
+	);
+
+	const session = await sessionFor({ id: 'user_1', email: 'a@b.co' }).requirePremium();
+	notes.push(`session:${session ? session.role : 'none'}`);
 	return notes;
 }
+
+/*
+ * Payments: credentials injected per request, never read from an environment.
+ * `platformEnv` here stands in for `event.platform.env`.
+ */
+export const razorpay: RazorpayClient = createRazorpayClient({
+	keyId: 'rzp_injected_key_id',
+	keySecret: 'injected_key_secret',
+	webhookSecret: platformEnv.RAZORPAY_WEBHOOK_SECRET,
+	logger,
+});
+
+export function describePaymentError(error: unknown): string {
+	if (error instanceof RazorpayApiError) return `${error.status}:${error.code ?? 'unknown'}`;
+	return 'unknown';
+}
+
+/*
+ * Auth: the surface supplies the session, the package supplies the rules.
+ * Nothing here reaches for Supabase - these ports are pure fixtures, which is
+ * the point of taking data access as an argument.
+ */
+export function sessionFor(user: SessionUser | null): ReturnType<typeof createSessionService> {
+	return createSessionService({
+		loadUser: async () => user,
+		loadProfile: async (userId) =>
+			({ id: userId, email: user?.email, tier: 'sovereign' }) satisfies ProfileLike,
+		logger,
+	});
+}
+
+export const access = (profile: ProfileLike | null): string =>
+	`${resolveRole(profile)}:${hasPremiumAccess(profile)}:${hasPermission(profile, 'publish')}`;
 
 export async function roundTrip(email: string): Promise<boolean> {
 	const token = await mintToken(
