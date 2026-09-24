@@ -3,7 +3,8 @@
 Shared infrastructure for the Ishan Parihar ecosystem surfaces. One source of
 truth for the utilities that would otherwise be rewritten in every repository:
 email transport, the subscriber store with its signed tokens, a PostgREST
-client, the Supabase subscriber adapter, and the abuse-handling primitives.
+client, the Supabase subscriber adapter, the abuse-handling primitives, a
+Razorpay client with its signature verifications, and role/tier resolution.
 
 ```text
 src/
@@ -16,6 +17,8 @@ src/
   security/       brute-force lockout
   monitoring/     delivery metrics, as a pure function
   data/           PostgREST client
+  payments/       Razorpay orders, subscriptions, plans, checkout + webhook HMAC
+  auth/           role and tier resolution, session orchestration over ports
   internal/       base64, hashing, logger
 ```
 
@@ -30,6 +33,52 @@ once, in more than one repository. Two are worth calling out:
 - **`campaign/`** exists because an unsigned `?email=<address>` unsubscribe link
   was written **twice**. Every campaign message now carries its own signed
   token plus the RFC 8058 headers.
+
+## Payments and auth: what moved, and what deliberately did not
+
+Both of these were challenged as missing, so the boundary is worth stating
+precisely rather than by omission.
+
+**`payments/` is a real extraction.** The hub's `payments/razorpay.ts` is 345
+lines of Workers-hardened fetch client written because the official Razorpay SDK
+calls `createRequire` and cannot load in a Cloudflare Worker. Non-trivial,
+portable, and the second surface that takes money should not write it again. The
+port changes three things:
+
+| Hub original | Here |
+|---|---|
+| reads `$env/dynamic/private` per call | credentials injected per `createRazorpayClient(config)` |
+| `node:crypto` `createHmac`, with a `Buffer` fallback | `crypto.subtle`, identical in a Worker and in Node |
+| `new Error(string)` on API failure | `RazorpayApiError` with `status`, `code`, `description` |
+| `===` on the checkout signature | `timingSafeEqual` - it is attacker-controlled input |
+
+Both verifications return a boolean and never throw. A bad signature is a
+business answer, not an exception, and a missing webhook secret returns `false`
+and logs at `error` - never `true`, because an unverified webhook is a forged
+payment notification.
+
+**`auth/` is the portable *half* of session handling, and that is not a
+shortfall.** The hub's identity engine is **Supabase Auth**, a managed service -
+the session validation is `supabase.auth.getUser()` plus a profile read, and the
+rest of `session-validation.ts` is `RequestEvent` handling and `redirect()`.
+Pulling it in wholesale would import SvelteKit types into a framework-agnostic
+package, which is the one contract this package will not break. What *is*
+portable, and *was* written more than once, is the question "given this profile
+row, what is this person allowed to do?" - so that is what is here:
+
+- `resolveRole`, `isAdmin`, `hasPremiumAccess`, `hasPermission` - pure, no I/O
+- `createSessionService({ loadUser, loadProfile, enrichProfile? })` - the
+  orchestration, with data access passed in, answering `requireUser`,
+  `requireAdmin`, `requirePremium`, `requirePermission`
+
+`createSessionService` never throws: a port failure is an unauthenticated
+request, not an exception for a route handler to catch. And `loadUser` is
+intended to reuse the work the request already did - the hub validates the
+session once in `hooks.server.ts` with a cookie-aware client, and a port that
+re-validates per call doubles auth latency for no security gain.
+
+No cookies, no session store, no RLS, no schema. Those stay with the surface and
+with Supabase.
 
 ## Why this exists
 
@@ -118,6 +167,8 @@ builds from the repository root and a sibling directory will not exist there:
 | `@ishan/ecosystem-core/security` | brute-force lockout |
 | `@ishan/ecosystem-core/monitoring` | delivery metrics |
 | `@ishan/ecosystem-core/data` | PostgREST client |
+| `@ishan/ecosystem-core/payments` | Razorpay client and signature verification |
+| `@ishan/ecosystem-core/auth` | role/tier resolution and session guards |
 
 Subpath exports are the configuration mechanism: a surface imports the modules
 it enables and nothing else, so a surface with no newsletter never pulls in the
@@ -261,7 +312,9 @@ Each release gets a `CHANGELOG.md` entry and a git tag `vX.Y.Z`.
 
 ## What must never be added here
 
-- Session or auth cookies, analytics identifiers, or user-visible chrome
+- Session or auth cookies, analytics identifiers, or user-visible chrome. Role
+  and tier *resolution* lives in `auth/`; the session store and the cookie
+  plumbing stay in the surface, because they are per-framework
 - Database ownership, RLS policies, or migrations. The package consumes a
   client and never owns a schema
 - Anything from The Undercurrent, or anything coupling a different owner's
@@ -269,8 +322,11 @@ Each release gets a `CHANGELOG.md` entry and a git tag `vX.Y.Z`.
 
 ## Tests
 
-147 unit tests across the six modules, all offline. The email provider suite
-drives a stub Cloudflare binding; the data suite drives a recording `fetch`, so
-every query shape is asserted against the actual request that would be sent;
-and the widget suite drives a minimal DOM stub, so the two-forms-one-page race
-is asserted rather than assumed.
+276 unit tests across every module, all offline. The email provider suite drives
+a stub Cloudflare binding; the data and payments suites drive a recording
+`fetch`, so every query and request shape is asserted against what would
+actually be sent; the widget suite drives a minimal DOM stub, so the
+two-forms-one-page race is asserted rather than assumed; and the payments and
+tokens suites recompute their HMACs with `node:crypto`, so the WebCrypto
+implementations are checked against the reference algorithm rather than against
+themselves.

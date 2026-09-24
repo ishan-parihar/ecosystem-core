@@ -14,6 +14,8 @@
  *   security/    brute-force lockout
  *   monitoring/  delivery metrics as a pure function
  *   data/        PostgREST client
+ *   payments/    Razorpay orders/subscriptions/plans, checkout + webhook HMAC
+ *   auth/        role and tier resolution, session orchestration over ports
  *
  * The injection contract, binding on every file in this package:
  *
@@ -37,6 +39,8 @@ export * from './security/index.js';
 export * from './monitoring/index.js';
 export * from './data/index.js';
 export * from './http/index.js';
+export * from './payments/index.js';
+export * from './auth/index.js';
 
 export type { Logger } from './internal/logger.js';
 export { resolveLogger, silentLogger } from './internal/logger.js';

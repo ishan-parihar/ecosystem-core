@@ -5,6 +5,50 @@ of the public API, so a release that forces a consumer to read its own
 environment variables, or to construct a service at import scope, is recorded
 as breaking.
 
+## 0.4.0
+
+Two new modules, `payments/` and `auth/`, which close the last two gaps between
+this package and "everything the ecosystem had written twice".
+
+Minor: additive only. No existing export changed shape or default, and no
+consumer has to change how it calls in.
+
+### Added
+
+- **`./payments`** - `createRazorpayClient(config)` over the orders,
+  subscriptions, plans and payments endpoints, plus
+  `verifyPaymentSignature` and `verifyWebhookSignature`. Ported from the hub's
+  Workers-hardened client, which exists because the official SDK calls
+  `createRequire` and cannot load in a Worker. Three deliberate changes:
+  credentials are injected per call instead of read from `$env`; the HMAC is
+  `crypto.subtle` rather than `node:crypto` with a `Buffer` fallback, so the
+  same code runs in a Worker and in Node; and API failures throw
+  `RazorpayApiError` carrying `status`, `code` and `description` instead of a
+  formatted string. The checkout signature comparison is now
+  `timingSafeEqual`, since it is attacker-controlled input. Both verifiers
+  return a boolean and never throw, and `verifyWebhookSignature` returns
+  `false` and logs at `error` when no secret is configured - an unverified
+  webhook must never read as verified.
+- **`./auth`** - `resolveRole`, `isAdmin`, `hasPremiumAccess`,
+  `hasPermission` as pure functions, and `createSessionService` for the
+  orchestration, answering `requireUser` / `requireAdmin` / `requirePremium` /
+  `requirePermission`. Data access arrives as ports (`loadUser`,
+  `loadProfile`, optional `enrichProfile`), so the module carries no Supabase
+  or SvelteKit dependency. `getSession` never throws: a port failure is an
+  unauthenticated request. The hub's slim-profile-then-enrich behaviour is
+  preserved behind `isProfileComplete`, and a failed enrichment degrades to
+  the slim profile rather than failing the request.
+- `payments` and `auth` subpath exports, and both re-exported from the root.
+
+### Not added, deliberately
+
+- **Supabase Auth itself.** The hub's identity engine is a managed service and
+  its middleware is `RequestEvent` handling. Only the portable role/tier half
+  moved. No cookies, no session store, no schema, no RLS.
+- **Contact submission handling.** It stays put until the technical authority
+  surface has built its own endpoint, so the shape being extracted is the one
+  two surfaces actually need rather than one surface's guess.
+
 ## 0.3.0
 
 Five new modules, and one behavioural fix that matters for consent.
