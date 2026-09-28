@@ -70,13 +70,22 @@ that cannot be patched underneath it. So:
 actually trustworthy - by content, after a real build, not by comparing filenames:
 
 ```
-npm run build && git diff --quiet -- dist
+npm run build && git add -A dist && git diff --quiet -- dist
 ```
 
-**If that check fails, `dist/` is stale and the release is not shippable** - fix it with
-`npm run build` and commit `dist/` in the same commit as the source change. Do not hand-edit
-`dist/`, and do not "clean up" the gate: a stale `dist/` ships to every consumer as a
-silent bug, not as a build error.
+**Use the index-relative form in a working repo.** `git diff --quiet -- dist` compares
+against HEAD, so any legitimate, not-yet-committed release rebuild reads as "stale" until
+you commit it - a false failure that is not a defect. Staging first makes the comparison
+"does a fresh rebuild differ from what is staged", which is the question you actually mean.
+CI itself runs on a clean checkout where index-vs-HEAD is correct, so CI can use the short
+form.
+
+**If that check still fails, `dist/` is stale and the release is not shippable** - fix it
+with `npm run build` and commit `dist/` in the same commit as the source change. Do not
+hand-edit `dist/`, and do not "clean up" the gate: a stale `dist/` ships to every consumer
+as a silent bug, not as a build error. Note that `tsc` does not clean `dist/`, so a removed
+module's build output must be deleted by hand or it ships as a ghost next to an `exports`
+map that no longer names it.
 
 Because `npm pack` ships the committed `dist/`, the file listing in `package.json`
 `files` and the subpath `exports` must both be updated in the same commit as any module

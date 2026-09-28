@@ -57,12 +57,31 @@ jobs:
           npm install --no-audit --no-fund /tmp/ishan-ecosystem-core-*.tgz
           node --input-type=module -e "
             const root = await import('@ishan/ecosystem-core');
-            for (const sub of ['email', 'subscribers', 'data', 'http']) {
+            // Every published subpath, so a release cannot remove or break one
+            // that only a consumer imports. `./auth` and `./tokens` are bound
+            // by the identity sidecar and the storefront, and `./payments` was
+            // changed by the 0.5.0 release, so all three are load-bearing.
+            for (const sub of ['auth', 'email', 'subscribers', 'data', 'http', 'cache', 'tokens', 'payments', 'monitoring']) {
               await import('@ishan/ecosystem-core/' + sub);
             }
             for (const name of ['createEmailService', 'createPostgrest', 'createSupabaseSubscriberTable', 'InMemoryRateLimiter']) {
               if (typeof root[name] !== 'function') throw new Error('missing export: ' + name);
             }
+            // `auth` is the subpath the identity sidecar and the storefront
+            // bind against, so a release that broke it would only surface at
+            // their install, not here. Prove the symbols it imports.
+            const auth = await import('@ishan/ecosystem-core/auth');
+            for (const name of ['createSessionService', 'resolveRole', 'hasPremiumAccess', 'hasPermission']) {
+              if (typeof auth[name] !== 'function') throw new Error('auth subpath missing export: ' + name);
+            }
+            // 0.5.0 changed tokens and extracted payments; both must resolve as
+            // real modules with their entry points present.
+            const tokens = await import('@ishan/ecosystem-core/tokens');
+            if (typeof tokens.mintToken !== 'function' || typeof tokens.verifyToken !== 'function')
+              throw new Error('tokens subpath missing mintToken/verifyToken');
+            const payments = await import('@ishan/ecosystem-core/payments');
+            if (typeof payments.createRazorpayClient !== 'function')
+              throw new Error('payments subpath missing createRazorpayClient');
             console.log('consumer resolution: OK');
           "
 
