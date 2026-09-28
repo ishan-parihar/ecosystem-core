@@ -43,6 +43,17 @@ jobs:
             exit 1
           fi
 
+      # A removal or a rename of a published subpath or root export is a legal
+      # edit to package.json, so nothing else objects to it. 0.5.0 removed
+      # ./campaign and ./security and the tag shipped; a consumer importing
+      # either found out at their own upgrade. This makes the version number an
+      # enforced claim. Fault-injected before wiring: it fails on a removed
+      # subpath, a renamed root export, and a changed subpath target, and
+      # passes on a clean tree, an additive subpath, and a removal paired with
+      # the bump that declares it.
+      - name: Breaking surface change requires a version bump
+        run: npm run check:semver
+
       - name: Test
         run: npm run test
 

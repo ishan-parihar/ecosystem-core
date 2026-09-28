@@ -65,6 +65,8 @@
 	"types": "./dist/index.d.ts",
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
+		"check:semver": "node scripts/check-semver.mjs",
+		"check:dist": "npm run build && git add -A dist && git diff --quiet -- dist",
 		"typecheck": "tsc -p tsconfig.json --noEmit",
 		"test": "vitest run",
 		"test:watch": "vitest",
