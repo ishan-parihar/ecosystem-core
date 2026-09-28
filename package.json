@@ -68,6 +68,7 @@
 		"check:semver": "node scripts/check-semver.mjs",
 		"check:dist": "npm run build && git add -A dist && git diff --quiet -- dist",
 		"check:ghosts": "node scripts/check-dist-ghosts.mjs",
+		"check:consumers": "node scripts/check-consumer-matrix.mjs",
 		"typecheck": "tsc -p tsconfig.json --noEmit",
 		"test": "vitest run",
 		"test:watch": "vitest",

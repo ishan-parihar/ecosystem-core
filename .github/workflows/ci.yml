@@ -72,6 +72,13 @@ jobs:
       - name: No orphaned build output
         run: npm run check:ghosts
 
+      # Every symbol a real surface calls, extracted from the surfaces rather
+      # than from a list written here. A subpath-level check says the module
+      # resolves; it does not say the function the consumer calls is still
+      # there, which is how 0.5.0 removed two subpaths with CI green.
+      - name: Every real consumer's imports still resolve
+        run: npm run check:consumers
+
       - name: Test
         run: npm run test
 
