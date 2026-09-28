@@ -58,31 +58,40 @@ jobs:
           node --input-type=module -e "
             const root = await import('@ishan/ecosystem-core');
             // Every published subpath, so a release cannot remove or break one
-            // that only a consumer imports. `./auth` and `./tokens` are bound
-            // by the identity sidecar and the storefront, and `./payments` was
-            // changed by the 0.5.0 release, so all three are load-bearing.
-            for (const sub of ['auth', 'email', 'subscribers', 'data', 'http', 'cache', 'tokens', 'payments', 'monitoring']) {
-              await import('@ishan/ecosystem-core/' + sub);
+            // that only a consumer imports. `./auth` and `./tokens` are bound by
+            // the identity sidecar and the storefront, and `./tokens` and
+            // `./payments` are the two modules 0.5.0 changed, so they are
+            // load-bearing rather than incidental.
+            //
+            // Each entry is the VERIFIED runtime value export of that subpath,
+            // enumerated from the built dist rather than from the .d.ts
+            // (index.d.ts re-exports, so the functions live in sub-files and a
+            // reader who checks only the entry declaration will conclude they
+            // are missing). Type-only exports are erased at runtime and cannot
+            // be asserted here; the typecheck job is their gate.
+            const EXPECTED = {
+              auth:        ['createSessionService', 'hasPermission', 'hasPremiumAccess', 'isAdmin', 'resolveRole'],
+              email:       ['createEmailService', 'createMockProvider', 'renderEmailShell', 'sanitizeHeaderValue'],
+              subscribers: ['createSupabaseSubscriberTable', 'mintToken', 'verifyToken'],
+              data:        ['createPostgrest', 'PostgrestClient', 'filterValue', 'likePattern'],
+              http:        ['InMemoryRateLimiter', 'FixedWindowRateLimiter', 'verifyTurnstile', 'resolvePolicy'],
+              cache:       ['getOrSet', 'resolveCache', 'MemoryCache', 'KvCache'],
+              tokens:      ['mintToken', 'verifyToken', 'verifyTokenCompat'],
+              payments:    ['createRazorpayClient', 'RazorpayApiError'],
+              monitoring:  ['shouldPauseSending', 'summarizeDelivery', 'summarizeByLane'],
+            };
+            for (const [sub, names] of Object.entries(EXPECTED)) {
+              const m = await import('@ishan/ecosystem-core/' + sub);
+              const missing = names.filter((n) => typeof m[n] !== 'function');
+              if (missing.length) {
+                throw new Error('@ishan/ecosystem-core/' + sub + ' missing value export(s): ' + missing.join(', '));
+              }
             }
             for (const name of ['createEmailService', 'createPostgrest', 'createSupabaseSubscriberTable', 'InMemoryRateLimiter']) {
               if (typeof root[name] !== 'function') throw new Error('missing export: ' + name);
             }
-            // `auth` is the subpath the identity sidecar and the storefront
-            // bind against, so a release that broke it would only surface at
-            // their install, not here. Prove the symbols it imports.
-            const auth = await import('@ishan/ecosystem-core/auth');
-            for (const name of ['createSessionService', 'resolveRole', 'hasPremiumAccess', 'hasPermission']) {
-              if (typeof auth[name] !== 'function') throw new Error('auth subpath missing export: ' + name);
-            }
-            // 0.5.0 changed tokens and extracted payments; both must resolve as
-            // real modules with their entry points present.
-            const tokens = await import('@ishan/ecosystem-core/tokens');
-            if (typeof tokens.mintToken !== 'function' || typeof tokens.verifyToken !== 'function')
-              throw new Error('tokens subpath missing mintToken/verifyToken');
-            const payments = await import('@ishan/ecosystem-core/payments');
-            if (typeof payments.createRazorpayClient !== 'function')
-              throw new Error('payments subpath missing createRazorpayClient');
-            console.log('consumer resolution: OK');
+            console.log('consumer resolution: OK (' + Object.keys(EXPECTED).length + ' subpaths, ' +
+              Object.values(EXPECTED).flat().length + ' value exports)');
           "
 
   # The steps above prove the package is buildable. This proves the thing
