@@ -6,6 +6,12 @@ on:
     tags: ['v*']
   pull_request:
     branches: [main]
+  # A stale dist/ or a removed subpath can only arrive with a change to
+  # the source or the manifest. Scoped as its OWN trigger rather than a
+  # `paths:` filter on push: a paths filter there would also stop the
+  # gates running for a push that touches only a workflow file, which is
+  # exactly the push that changes a gate.
+  workflow_dispatch:
 
 jobs:
   verify:
@@ -58,6 +64,13 @@ jobs:
       # the bump that declares it.
       - name: Breaking surface change requires a version bump
         run: npm run check:semver
+
+      # tsc does not clean dist/, so removing a module leaves its compiled
+      # output committed and shipped to every consumer, and nothing else in the
+      # pipeline would notice: the dist gate only compares a fresh build
+      # against what is committed, and a ghost is present in both.
+      - name: No orphaned build output
+        run: npm run check:ghosts
 
       - name: Test
         run: npm run test
