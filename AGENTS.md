@@ -94,16 +94,40 @@ add/remove, or an import that typechecks locally 404s in a consumer.
 ## 5. Test and build commands
 
 ```
-npm run contract    # injection contract (scripts/verify-contract.mjs)
-npm run typecheck   # tsc --noEmit
-npm run build       # tsc -p tsconfig.json (emits dist/)
-npm run test        # vitest run
-npm run verify      # all four, in that order - run this before any commit
+npm run contract        # injection contract (scripts/verify-contract.mjs)
+npm run typecheck       # tsc --noEmit
+npm run build           # tsc -p tsconfig.json (emits dist/)
+npm run test            # vitest run
+npm run verify          # all four, in that order - run this before any commit
+
+npm run check:ghosts    # no orphaned build output (scripts/check-dist-ghosts.mjs)
+npm run check:semver    # a breaking surface change needs the bump that declares it
+npm run check:consumers # every symbol a real surface calls still exists
+npm run check:dist      # index-relative dist gate, for a working repo
 ```
 
 A change is not done until `npm run verify` is green **and** the `dist/` gate passes. New
 behaviour needs a test that can actually fail - not a test that re-pins a default or
 asserts a mock echoes.
+
+The three `check:*` scripts are CI gates, and each one was fault-injected before it
+was wired in, because each was a permanent green first:
+
+- `check:semver` compares against `HEAD^`, reads the base version from
+  `package.json` at that ref rather than from a tag name, and takes root export
+  names from the built `dist/index.js` - not from `dist/index.d.ts`, which is a
+  re-export barrel declaring no names. It needs real history, so CI checks out
+  with `fetch-depth: 0`.
+- `check:ghosts` exists because `tsc` does not clean `dist/`, and the `dist/` gate
+  above cannot see an orphan: a ghost is in both the committed tree and a fresh
+  build.
+- `check:consumers` asserts the symbols `ishanparihar-svelte` and
+  `technical-authority-website` actually import. If a surface is added, add it to
+  `scripts/check-consumer-matrix.mjs` with a comment - a surface not on that list
+  is a surface nothing checks.
+
+A check that cannot fail is not evidence. When you add one, break it on purpose
+and confirm it goes red. `RELEASING.md` has the full release sequence.
 
 ## 6. Multi-surface blast radius
 

@@ -24,7 +24,9 @@ alone could never catch a `prepare` that broke every GitHub install.
 | Tests | 242/242 | 28/28 |
 | Typecheck | OK | OK |
 | `dist` gate | PASS | PASS |
+| Ghost detector | PASS | PASS |
 | Semver gate | PASS (6/6 fault matrix) | PASS (6/6 fault matrix) |
+| Consumer matrix | PASS (2 surfaces, 22 symbols) | n/a — core's own consumers |
 | Runtime deps | none | `better-auth` |
 | Peer on core | n/a | `>=0.4.0`, required, not optional |
 
@@ -95,18 +97,18 @@ currently unclaimed on the registry (404), so the names are free.
 sufficient dependency mechanism today, and publishing is a separate,
 operator-owned, irreversible decision.
 
-## 2. Phase A: release hardening
+## 2. Phase A: release hardening — all four items DONE
 
-Two of the four items are done and enforced in CI. The other two are written down
-and still open.
+Every item below is enforced in CI in both packages, and every check was
+fault-injected before being wired in. A check that cannot fail is not evidence.
 
-### A1. Semver discipline is now enforced — DONE
+### A1. Semver discipline — DONE
 
 `0.5.0` removed two published subpaths (`./campaign`, `./security`). Nothing
 objected, because a removal is a legal edit to `package.json`: the tag went out,
 and a consumer importing either discovered it at their own upgrade.
 
-`scripts/check-semver.mjs` now fails a release that removes a published subpath,
+`scripts/check-semver.mjs` fails a release that removes a published subpath,
 changes a subpath target, or removes a root value export without the bump that
 declares it. While the major is `0`, the minor is the breaking boundary npm
 enforces, so a removal requires a minor bump.
@@ -126,7 +128,10 @@ reading the code — all three would have shipped as permanent green checks:
    ecosystem-auth was in when its gate was first wired into CI.
 
 An unresolvable base now fails loudly rather than reporting "no breaking change"
-for a comparison that never ran.
+for a comparison that never ran. It also failed in CI for a fourth reason that
+no local test could have caught: `actions/checkout` defaults to `fetch-depth: 1`,
+so there is no `HEAD^` on a runner. Fixed with `fetch-depth: 0`. **A local green
+is evidence about the local machine, not about CI.**
 
 Fault matrix, verified in both packages on a clean committed tree: clean tree
 passes, a removed subpath fails, a renamed root export fails, a removal paired
@@ -137,7 +142,7 @@ The gate also earned its keep during development: it flagged `./email` missing
 from the working tree's exports map, a real corruption introduced by a
 fault-injection harness that a passing run had hidden.
 
-### A2. The dist invariant — DONE, with one gap named
+### A2. The dist invariant — DONE, including the hazard
 
 `dist/` is committed and shipped in `files`, so a stale `dist/` reaches every
 consumer as a runtime bug rather than a build error. Both packages enforce it
@@ -146,37 +151,50 @@ working repo the check must be index-relative (`npm run check:dist`), or a
 correct uncommitted rebuild reads as a phantom failure; CI runs on a clean
 checkout, so the short form is right there.
 
-Known hazard, documented in core's `AGENTS.md`: `tsc` does not clean `dist/`, so
-removing a module leaves ghost output that a consumer could import even though
-nothing in `src/` declares it. The `exports` map hides this for well-behaved
-consumers, so it is a packaging-hygiene issue rather than a live bug. A
-`dist`-clean step would close it; it is not done.
+The hazard the content gate cannot see is now closed by its own check.
+`tsc` does not clean `dist/`, so removing a module leaves its compiled output
+committed and shipped — and the content gate cannot catch it, because a ghost is
+present in *both* the committed tree and a fresh build. `scripts/check-dist-ghosts.mjs`
+fails on a ghost, and on the inverse (a `src` module with no output, which is a
+real bug: the consumer gets a resolution error instead of the feature). A missing
+`dist/` is an error, not a clean pass.
 
-### A3. No compatibility matrix against real consumers — OPEN
+`workflow_dispatch` was added so the gates can be run on demand. It is
+deliberately its own trigger rather than a `paths:` filter on `push`: a paths
+filter there would also stop the gates running for a push that touches only a
+workflow file, which is exactly the push that changes a gate.
 
-The two existing consumers (`ishanparihar-svelte`, `technical-authority-website`)
-are on the v0.4.0 tarball. Nothing in CI proves the current core still works for
-them, or that the auth adapter works for a surface that has both. A job should
-install the current core into a scratch project, import every published subpath,
-and assert the entry points each known consumer calls. The symbol map already in
-core's CI is the seed; it should name the consumer, not just the subpath.
+### A3. Consumer matrix — DONE
 
-### A4. Release process is undocumented as a procedure — OPEN
+The two existing consumers are on the v0.4.0 tarball, and nothing was proving
+the current core still works for them. `scripts/check-consumer-matrix.mjs` asserts
+every symbol a real surface actually calls: 22 runtime symbols across 10
+subpaths, extracted **from the two surfaces** rather than from a list written in
+the package. A failure names the affected consumer.
 
-Each package has an `AGENTS.md` covering how to *work* in it. Neither has a
-release runbook: the tag sequence, what must be green before tagging, what a
-rollback looks like. A tag is a public, effectively irreversible act and the
-person doing it should not be reconstructing the steps.
+| Surface | Imports |
+|---|---|
+| `ishanparihar-svelte` | `./auth ./cache ./email ./http ./monitoring ./payments ./tokens` |
+| `technical-authority-website` | root, plus `./data ./http ./subscribers` |
 
-The order that is already correct and should be written down as the runbook:
+The subpath-level consumer proof was not enough: it says a module resolves, not
+that the function a consumer calls is still there, which is precisely how 0.5.0
+removed two subpaths with CI green.
 
-```bash
-npm run verify                    # contract, typecheck, build, test
-npm run check:semver              # breaking surface change vs the bump
-npm run check:dist                # index-relative dist gate
-# then commit, tag, push
-git push origin main && git push origin vX.Y.Z
-```
+This check was also vacuous on first run: it parsed `export { a, b }` and
+`export * from`, but a compiled module declares its own symbols as
+`export async function f`, so every directly-declaring subpath — which is most of
+them — resolved to zero names. And a zero-name parse is indistinguishable from
+"nothing was removed", so an empty set is now an error naming `npm run build`.
+
+### A4. Release runbook — DONE
+
+`RELEASING.md` in both packages: the gate order, the version table for `0.x`, the
+commit-then-tag sequence, and what to do when CI is red on a tag (a new patch
+release, never move a published tag). Its own checklist was executed before being
+written down, and it failed the first time because the runbook was untracked —
+which is the point of the clean-tree assertion at the end of it. It now returns
+GREEN in both packages.
 
 ## 3. Phase B: the identity decision (blocking quant-signals, not the packages)
 
@@ -222,20 +240,17 @@ Named so they are not mistaken for done:
 
 ## 5. Sequencing
 
-Ordered by what unblocks what, not by effort.
+Phase A is complete. Ordered by what unblocks what, not by effort.
 
-1. **A1 + A2** — DONE and enforced in CI in both packages. The semver gate and
-   the dist gate both run on every push, and the semver gate has a demonstrated
-   failure mode in each package.
-2. **A4** (release runbook). The command sequence is in section 2; it needs to
-   become a proper runbook, and it should be written before the next tag.
-3. **A3** (consumer matrix). Depends on knowing who the consumers are; that is
-   known.
-4. **Section 1 publish decision.** Operator-owned, irreversible, and explicitly
-   not a prerequisite.
-5. **Phase B identity fork** is owned by the surface, not here, and nothing in
-   the packages blocks it from being decided.
-6. **Phase C gaps** are per-need: the token rotation story is required before a
+1. **A1 + A2 + A3 + A4** — DONE and enforced in CI in both packages. Every check
+   has a demonstrated failure mode, and the runbook's own checklist returns
+   GREEN.
+2. **Section 1 publish decision.** Operator-owned, irreversible, and explicitly
+   not a prerequisite. Nothing in the packages depends on it.
+3. **Phase B identity fork** is owned by each surface, not here, and nothing in
+   the packages blocks it from being decided. This is the next thing that
+   unblocks a deployable surface.
+4. **Phase C gaps** are per-need: the token rotation story is required before a
    surface holds real sessions; the per-isolate rate-limit ceiling should be
    documented regardless.
 
