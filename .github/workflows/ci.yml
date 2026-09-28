@@ -11,7 +11,12 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth 0: the semver gate compares against the previous release,
+      # so it needs real history. The default depth-1 checkout has no HEAD^
+      # and no tag, and the gate then fails with "invalid object name".
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -114,7 +119,12 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth 0: the semver gate compares against the previous release,
+      # so it needs real history. The default depth-1 checkout has no HEAD^
+      # and no tag, and the gate then fails with "invalid object name".
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
