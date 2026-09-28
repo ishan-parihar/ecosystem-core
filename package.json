@@ -73,7 +73,7 @@
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"contract": "node scripts/verify-contract.mjs",
-		"verify": "npm run contract && npm run typecheck && npm run build && npm run test",
+		"verify": "npm run contract && npm run typecheck && npm run build && npm run test && npm run check:consumers && npm run check:dist && npm run check:ghosts && npm run check:semver",
 		"prepare": "npm run build"
 	},
 	"devDependencies": {
