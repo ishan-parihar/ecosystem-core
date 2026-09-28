@@ -32,10 +32,6 @@
 			"types": "./dist/subscribers/index.d.ts",
 			"default": "./dist/subscribers/index.js"
 		},
-		"./tokens": {
-			"types": "./dist/tokens/index.d.ts",
-			"default": "./dist/tokens/index.js"
-		},
 		"./monitoring": {
 			"types": "./dist/monitoring/index.d.ts",
 			"default": "./dist/monitoring/index.js"
