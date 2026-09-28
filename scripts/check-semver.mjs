@@ -105,12 +105,23 @@ function rootValueExportsAt(ref) {
   }
 }
 
-// Compare against the previous RELEASE, not the most recent tag on HEAD.
-// `git describe --tags --abbrev=0` returns v0.5.0 when HEAD is tagged v0.5.0,
-// so the "diff" is a tag against itself: empty, and the gate reported "no
-// breaking change" for a commit that had in fact removed a subpath. That is the
-// vacuous-pass shape - a check that cannot fail. So when HEAD is itself tagged,
-// compare its PARENT, which is the state a consumer on that tag does not have.
+// Compare against the state a consumer on the previous release does NOT have.
+//
+// `git describe --tags --abbrev=0` is wrong here: when HEAD is itself tagged it
+// returns that same tag, so the comparison is a tag against itself - empty, and
+// the gate reported "no breaking change" for a commit that had in fact removed
+// a subpath. That is the vacuous-pass shape this gate exists to prevent.
+//
+// So when HEAD is tagged, the base is HEAD^: the commit just before the release.
+// It is deliberately NOT resolved through `describe`, because on a first tagged
+// release the parent predates every tag and `git describe HEAD^` fails outright
+// - which previously sent this gate down its "no prior release" path and left it
+// a permanent, silent pass.
+//
+// The base is therefore a COMMIT ref, which works for a tag or a commit, and
+// the base version is read from package.json at that ref rather than parsed out
+// of a ref name. On a first release that ref is not a tag and has no version in
+// its name at all.
 const headIsTagged = (() => {
   try {
     return git('tag', '--points-at', 'HEAD').split('\n').filter(Boolean).length > 0;
@@ -119,23 +130,15 @@ const headIsTagged = (() => {
   }
 })();
 
-const base = process.argv[2] || (() => {
+const base = process.argv[2] || (headIsTagged ? 'HEAD^' : (() => {
   try {
-    if (headIsTagged) {
-      // The tagged commit is the release; the prior tag is what it replaced.
-      const prior = git('describe', '--tags', '--abbrev=0', 'HEAD^');
-      return prior;
-    }
     return git('describe', '--tags', '--abbrev=0');
   } catch {
-    return null;
+    // No tag reachable: compare against the previous commit, which is still a
+    // real comparison rather than none.
+    return 'HEAD^';
   }
-})();
-
-if (!base) {
-  console.log('  semver: no prior release to compare against (first release) - nothing to enforce');
-  process.exit(0);
-}
+})());
 
 /**
  * The version declared at a ref, so the bump is measured against the state
