@@ -5,6 +5,49 @@ of the public API, so a release that forces a consumer to read its own
 environment variables, or to construct a service at import scope, is recorded
 as breaking.
 
+## 0.5.0
+
+**Breaking: two modules removed.** `./campaign` and `./security` are gone, along
+with their subpath exports.
+
+Removed rather than deprecated, because neither had a single consumer. Verified
+by exported symbol *and* by subpath import across every surface in the ecosystem
+- including the two that import the package root, which a subpath-only check
+would miss. A package described as shared while carrying modules nothing imports
+is not shared code; it is maintenance with no reader, and it makes the package
+look more load-bearing than it is.
+
+Breaking only on paper: nothing imports either path, so no consumer has to
+change. A surface pinned to 0.4.0 keeps working, and 0.5.0 changes no existing
+export's shape or default.
+
+### Removed
+
+- **`./campaign`** - `sendCampaign`, `createSupabaseRecipientSource`,
+  `buildTagsFilter` and the recipient/batch types. The signed RFC 8058
+  unsubscribe links it minted are *not* lost: they are built from `./tokens`,
+  which remains. The capability was simply never adopted - campaign sending in
+  the ecosystem builds its unsubscribe URLs inline, in three places.
+- **`./security`** - the brute-force lockout.
+
+  **The premise this rests on, stated so it is a decision and not an
+  oversight:** the OTP-only control is request rate limiting (`./http`),
+  and `@ishan/ecosystem-auth` - the identity sidecar that supplies the
+  `SessionPorts` this core consumes - leaves `emailAndPassword` **off
+  unless a surface explicitly enables it** (`emailAndPassword` is opt-in;
+  the adapter sets it only when a surface asks). So while every current
+  surface is OTP-only, `./http` is the correct control and lockout is
+  dead weight.
+
+  **Consequence for consumers:** a surface that turns on
+  `emailAndPassword` **must** re-add an account lockout before it has
+  password auth in production. That control was removed here *because* the
+  default is OTP, not because password auth is impossible - a future
+  `@ishan/ecosystem-auth` that defaults to password would invalidate this
+  premise, and lockout is one `git checkout` away in the history.
+
+Both remain in git history if either is wanted back.
+
 ## 0.4.0
 
 Two new modules, `payments/` and `auth/`, which close the last two gaps between

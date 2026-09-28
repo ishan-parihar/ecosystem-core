@@ -161,10 +161,8 @@ builds from the repository root and a sibling directory will not exist there:
 | `@ishan/ecosystem-core/email` | providers and rendering only |
 | `@ishan/ecosystem-core/subscribers` | store and Supabase adapter |
 | `@ishan/ecosystem-core/tokens` | signed links and the legacy verifier |
-| `@ishan/ecosystem-core/campaign` | recipient selection and batched send |
 | `@ishan/ecosystem-core/cache` | KV or in-memory store, and `getOrSet` |
 | `@ishan/ecosystem-core/http` | rate limiting, policies, Turnstile |
-| `@ishan/ecosystem-core/security` | brute-force lockout |
 | `@ishan/ecosystem-core/monitoring` | delivery metrics |
 | `@ishan/ecosystem-core/data` | PostgREST client |
 | `@ishan/ecosystem-core/payments` | Razorpay client and signature verification |

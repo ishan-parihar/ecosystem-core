@@ -66,8 +66,38 @@ describe('mintToken / verifyToken (canonical)', () => {
 
 	it('rejects a tampered signature', async () => {
 		const token = await mintToken({ purpose: 'confirm', email: 'a@b.co' }, { secret: SECRET, expiresInSec: 60 });
-		const forged = `${token.slice(0, -1)}${token.endsWith('A') ? 'B' : 'A'}`;
+		const [payloadPart, signaturePart] = token.split('.') as [string, string];
+		// Tamper the FIRST signature character, deliberately not the last one. The
+		// last character of a 32-byte digest carries only two significant bits, so
+		// some replacements decode to identical bytes and the token still verifies -
+		// which made this assertion fail roughly one run in sixteen.
+		const head = signaturePart.charAt(0);
+		const forged = `${payloadPart}.${head === 'A' ? 'B' : 'A'}${signaturePart.slice(1)}`;
 		const result = await verifyToken(forged, { secret: SECRET });
+		expect(result.valid).toBe(false);
+		if (result.valid) return;
+		expect(result.reason).toBe('bad_signature');
+	});
+
+	it('rejects a non-canonical spelling of an otherwise valid signature', async () => {
+		// The regression guard for the malleability fix. `encodeBase64` always leaves
+		// the final character's low two bits zero, so bumping that character by one
+		// still decodes to the same 32 bytes: the signature is unchanged and, before
+		// the canonical check, this token verified. That made one signature admissible
+		// under four different token strings, enough to defeat replay protection
+		// keyed on the string.
+		const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+		const token = await mintToken({ purpose: 'confirm', email: 'a@b.co' }, { secret: SECRET, expiresInSec: 60 });
+		const [payloadPart, signaturePart] = token.split('.') as [string, string];
+
+		// A digest's final character is always a multiple of four, so +1 is always a
+		// valid, distinct character that decodes identically.
+		const lastIndex = alphabet.indexOf(signaturePart.charAt(signaturePart.length - 1));
+		expect(lastIndex % 4).toBe(0);
+		const respelled = `${payloadPart}.${signaturePart.slice(0, -1)}${alphabet.charAt(lastIndex + 1)}`;
+		expect(respelled).not.toBe(token);
+
+		const result = await verifyToken(respelled, { secret: SECRET });
 		expect(result.valid).toBe(false);
 		if (result.valid) return;
 		expect(result.reason).toBe('bad_signature');

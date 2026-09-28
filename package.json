@@ -1,7 +1,7 @@
 {
 	"name": "@ishan/ecosystem-core",
-	"version": "0.4.0",
-	"description": "Shared, injected core for the Ishan Parihar ecosystem surfaces: email transport, signed tokens, the subscriber store, campaigns, a cache and KV-backed rate limiting, brute-force lockout, delivery metrics, a PostgREST client, the Razorpay client with its signature verifications, and role/tier session resolution. No SvelteKit virtual modules, no module-level singletons.",
+	"version": "0.5.0",
+	"description": "Shared, injected core for the Ishan Parihar ecosystem surfaces: email transport, signed tokens, the subscriber store, a cache and KV-backed rate limiting, delivery metrics, a PostgREST client, the Razorpay client with its signature verifications, and role/tier session resolution. No SvelteKit virtual modules, no module-level singletons.",
 	"private": true,
 	"type": "module",
 	"license": "UNLICENSED",
@@ -36,17 +36,9 @@
 			"types": "./dist/tokens/index.d.ts",
 			"default": "./dist/tokens/index.js"
 		},
-		"./security": {
-			"types": "./dist/security/index.d.ts",
-			"default": "./dist/security/index.js"
-		},
 		"./monitoring": {
 			"types": "./dist/monitoring/index.d.ts",
 			"default": "./dist/monitoring/index.js"
-		},
-		"./campaign": {
-			"types": "./dist/campaign/index.d.ts",
-			"default": "./dist/campaign/index.js"
 		},
 		"./cache": {
 			"types": "./dist/cache/index.d.ts",

@@ -8,10 +8,8 @@
  *   email/       transport, providers, and the one theme-driven renderer
  *   subscribers/ the double opt-in state machine and the Supabase adapter
  *   tokens/      signed links: confirm, unsubscribe, reset, guest access
- *   campaign/    recipient selection by source and tag, batched send
  *   cache/       KV and in-isolate stores behind one interface
  *   http/        rate limiting (both limiters), Turnstile, IP hashing
- *   security/    brute-force lockout
  *   monitoring/  delivery metrics as a pure function
  *   data/        PostgREST client
  *   payments/    Razorpay orders/subscriptions/plans, checkout + webhook HMAC
@@ -34,8 +32,6 @@ export * from './email/index.js';
 export * from './subscribers/index.js';
 export * from './tokens/index.js';
 export * from './cache/index.js';
-export * from './campaign/index.js';
-export * from './security/index.js';
 export * from './monitoring/index.js';
 export * from './data/index.js';
 export * from './http/index.js';

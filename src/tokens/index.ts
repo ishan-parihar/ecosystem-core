@@ -170,6 +170,24 @@ function splitToken(token: string): { payloadPart: string; signaturePart: string
 	return { payloadPart: token.slice(0, dotIndex), signaturePart: token.slice(dotIndex + 1) };
 }
 
+/**
+ * Whether `value` is the one accepted spelling of `bytes`.
+ *
+ * base64url is not injective over its last character. A 32-byte digest encodes to
+ * 43 characters, and `encodeBase64` always leaves the last character's low two
+ * bits zero - so `A` (0) and `B` (1) decode to the *same* bytes, as do any two
+ * characters sharing `value >> 2`.
+ *
+ * That is signature malleability: one signature admits up to four distinct token
+ * strings. It cannot forge a signature over different content, but it does defeat
+ * any replay or single-use check that keys on the token string, because the same
+ * token can be re-presented in an alternative spelling. Re-encoding is the cheapest
+ * way to demand the single canonical form.
+ */
+function isCanonical(value: string, bytes: Bytes): boolean {
+	return encodeBase64Url(bytes) === value;
+}
+
 function decodePayload(payloadPart: string): Record<string, unknown> | null {
 	let bytes: Bytes;
 	try {
@@ -200,6 +218,12 @@ async function canonicalSignatureIsValid(
 	} catch {
 		return false;
 	}
+	// Canonical form only. Without this, alternative spellings of the same bytes
+	// verify, which is the malleability `isCanonical` documents. Both parts are
+	// checked because verification runs over the *decoded* payload, so a
+	// non-canonical payload spelling would verify just as well.
+	if (!isCanonical(signaturePart, signatureBytes)) return false;
+	if (!isCanonical(payloadPart, payloadBytes)) return false;
 	// `verify` is the constant-time comparison. Do not replace it with `===`.
 	return (await crypto.subtle.verify('HMAC', await importHmacKey(secret), signatureBytes, payloadBytes)) === true;
 }
