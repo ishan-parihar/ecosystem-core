@@ -12,17 +12,21 @@
 
 Both packages are public on GitHub and installable from a clean checkout. This
 was proven end to end, not assumed: a fresh directory with only
-`package.json` installed both by GitHub spec and then imported them.
+`package.json` installed both by GitHub spec and then imported them. That proof
+now runs in CI for **both** install paths - a packed tarball and a git spec -
+because npm only runs lifecycle scripts for the git path, so the tarball proof
+alone could never catch a `prepare` that broke every GitHub install.
 
 | | `@ishan/ecosystem-core` | `@ishan/ecosystem-auth` |
 |---|---|---|
 | Repository | `github.com/ishan-parihar/ecosystem-core` (public) | `github.com/ishan-parihar/ecosystem-auth` (public) |
-| Version | `0.5.0`, tagged and pushed | `0.1.0`, `main` pushed |
+| Version | `0.5.0`, tagged and pushed | `0.1.0`, tagged and pushed |
 | Tests | 242/242 | 28/28 |
 | Typecheck | OK | OK |
 | `dist` gate | PASS | PASS |
+| Semver gate | PASS (6/6 fault matrix) | PASS (6/6 fault matrix) |
 | Runtime deps | none | `better-auth` |
-| Peer on core | n/a | `>=0.5.0`, required, not optional |
+| Peer on core | n/a | `>=0.4.0`, required, not optional |
 
 Install specs that are proven to work today:
 
@@ -30,13 +34,27 @@ Install specs that are proven to work today:
 // a surface depends on core directly
 "@ishan/ecosystem-core": "github:ishan-parihar/ecosystem-core#v0.5.0"
 
-// a surface uses the auth adapter
-"@ishan/ecosystem-auth": "github:ishan-parihar/ecosystem-auth#main",
-"@ishan/ecosystem-core": "github:ishan-parihar/ecosystem-core#v0.5.0"  // required peer
+// a surface uses the auth adapter. core is a REQUIRED peer: npm does not
+// install it, so a surface can never end up with two physical copies.
+"@ishan/ecosystem-auth": "github:ishan-parihar/ecosystem-auth#v0.1.0",
+"@ishan/ecosystem-core": "github:ishan-parihar/ecosystem-core#v0.5.0"
 ```
 
 Both are public and require no credentials, which is the point: a surface can
 install them in CI with no npm login, no publish step, and no secret in a repo.
+Pin the tags. `#main` resolves, but it is a moving ref, and a surface that pins
+it breaks whenever the package is edited - which is the failure mode section 2's
+first item exists to make visible.
+
+**Peer floor: `>=0.4.0`, and it is evidence, not caution.** It was briefly
+raised to `>=0.5.0` on the reasoning that a higher floor was "safer". That was
+unjustified and it cost something: both real consumers pin the v0.4.0 tarball, so
+the bump would have forced them to cut a release for no reason. The floor is
+`>=0.4.0` because core's 0.5.0 changelog states a 0.4.0-pinned surface keeps
+working, `src/auth` shipped in 0.4.0, and the auth package's whole import set
+(`Logger` from the root; `createSessionService`, `ProfileLike`, `SessionPorts`,
+`SessionService`, `SessionUser` from `./auth`) is present there. The suite was
+re-run against a real core **0.4.0** install - not 0.5.0 - and passes 28/28.
 
 ## 1. Why there is no npm release yet, and when to make one
 
@@ -62,67 +80,103 @@ Publish when either is true:
 - a surface outside this infrastructure needs to install it, or
 - more than one surface pins it and a version skew would be expensive to unwind.
 
-**If we publish**, the requirements are: `publishConfig.access: public` (both
-packages currently have no `publishConfig`, so a publish would default to
-private and silently fail to be installable), an npm login on this machine
-(`npm whoami` is currently `ENEEDAUTH`), and the `@ishan` scope claimed or
-verified as ours. The `@ishan/ecosystem-core` and `@ishan/ecosystem-auth` names
-are currently unclaimed on the registry (404), so the names are free.
+If we publish, the requirements are: drop `"private": true`, set `license` to
+something other than `UNLICENSED` (or keep it and say in the README that the
+tag archive is the only consumption path and the code is all-rights-reserved -
+but not both claims at once, because today the manifest says UNLICENSED while
+the repository is public and the README documents a tag-archive install), add
+`publishConfig.access: "public"`, and pass `--access public` explicitly, since a
+scoped package otherwise defaults to restricted and 404s for every consumer. The
+machine also has no npm credentials (`npm whoami` is `ENEEDAUTH`), so this is an
+operator step. The `@ishan/ecosystem-core` and `@ishan/ecosystem-auth` names are
+currently unclaimed on the registry (404), so the names are free.
 
 **Do not publish as a prerequisite for quant-signals.** The GitHub spec is a
 sufficient dependency mechanism today, and publishing is a separate,
 operator-owned, irreversible decision.
 
-## 2. Phase A: release hardening (blocking all adoption)
+## 2. Phase A: release hardening
 
-These are the properties that make a shared package safe to depend on. None of
-them exist yet, and every one of them is a real defect waiting to be paid for.
+Two of the four items are done and enforced in CI. The other two are written down
+and still open.
 
-### A1. Semver discipline is currently unenforced
+### A1. Semver discipline is now enforced — DONE
 
-`0.5.0` removed two published subpaths (`./campaign`, `./security`). Every
-existing consumer that imported them breaks on upgrade, and nothing in the
-toolchain would have told us before the tag. A consumer pinning `#v0.4.0` is
-protected only by its own pin; a consumer tracking `main` breaks silently.
+`0.5.0` removed two published subpaths (`./campaign`, `./security`). Nothing
+objected, because a removal is a legal edit to `package.json`: the tag went out,
+and a consumer importing either discovered it at their own upgrade.
 
-- Add a CI check that diffs the published `exports` map and the root export
-  names between the previous tag and HEAD, and fails on a removal or a rename
-  unless the `package.json` version carries a major (or, while the version is
-  `0.x`, the minor) bump. The `0.x` rule matters: at `0.x` npm treats the minor
-  as the breaking boundary, so the tool must too.
-- Add the check to the `published-artifact` job, which currently only runs on a
-  tag. That job is the only place the *published* shape is proven, and it is the
-  only place a consumer sees.
+`scripts/check-semver.mjs` now fails a release that removes a published subpath,
+changes a subpath target, or removes a root value export without the bump that
+declares it. While the major is `0`, the minor is the breaking boundary npm
+enforces, so a removal requires a minor bump.
 
-### A2. The dist invariant is a convention, not a gate
+Three ways it was vacuous first, each found by injecting faults rather than by
+reading the code — all three would have shipped as permanent green checks:
 
-`dist/` is committed and shipped, and a stale `dist/` ships to every consumer as
-a runtime bug rather than a build error. The content gate exists in both
-repositories and both pass, but it is a step in a workflow, not a check on
-every commit that touches `src/`. Tighten it to run whenever `src/` changes, and
-make the failure message name the fix.
+1. Comparing against "the most recent tag" is a tag against itself whenever HEAD
+   is tagged, so it reported "no breaking change" for a commit that had removed a
+   subpath. The base is now `HEAD^`.
+2. The root export list cannot be read from `dist/index.d.ts`, which is only
+   `export * from './<sub>/index.js'` lines and declares no names, so a regex over
+   it matches nothing and reports "no change" for any removal. The built
+   `dist/index.js` is the only artifact stating the real runtime surface.
+3. `git describe HEAD^` fails when the parent predates every tag, and the catch
+   turned that into a silent "no prior release" pass — which is the state
+   ecosystem-auth was in when its gate was first wired into CI.
 
-Known hazard, already documented in core's `AGENTS.md`: `tsc` does not clean
-`dist/`, so removing a module leaves ghost output. A consumer can import a path
-that no longer exists in `src/`. The `exports` map hides this for well-behaved
-consumers, so it is a packaging-hygiene issue rather than a live bug.
+An unresolvable base now fails loudly rather than reporting "no breaking change"
+for a comparison that never ran.
 
-### A3. No compatibility matrix against real consumers
+Fault matrix, verified in both packages on a clean committed tree: clean tree
+passes, a removed subpath fails, a renamed root export fails, a removal paired
+with the bump that declares it passes, an additive subpath passes, restore
+returns to green.
+
+The gate also earned its keep during development: it flagged `./email` missing
+from the working tree's exports map, a real corruption introduced by a
+fault-injection harness that a passing run had hidden.
+
+### A2. The dist invariant — DONE, with one gap named
+
+`dist/` is committed and shipped in `files`, so a stale `dist/` reaches every
+consumer as a runtime bug rather than a build error. Both packages enforce it
+after a real build, as a content check, never a filename comparison. In a
+working repo the check must be index-relative (`npm run check:dist`), or a
+correct uncommitted rebuild reads as a phantom failure; CI runs on a clean
+checkout, so the short form is right there.
+
+Known hazard, documented in core's `AGENTS.md`: `tsc` does not clean `dist/`, so
+removing a module leaves ghost output that a consumer could import even though
+nothing in `src/` declares it. The `exports` map hides this for well-behaved
+consumers, so it is a packaging-hygiene issue rather than a live bug. A
+`dist`-clean step would close it; it is not done.
+
+### A3. No compatibility matrix against real consumers — OPEN
 
 The two existing consumers (`ishanparihar-svelte`, `technical-authority-website`)
-are on the `v0.4.0` tarball. Nothing in CI proves the current core still works
-for them, or that the auth adapter works for a surface that has both. Add a
-job that installs the current core into a scratch project, imports every
-published subpath, and asserts the entry points each known consumer calls. The
-symbol map already written into core's CI is the seed for this; it should name
-the consumer, not just the subpath.
+are on the v0.4.0 tarball. Nothing in CI proves the current core still works for
+them, or that the auth adapter works for a surface that has both. A job should
+install the current core into a scratch project, import every published subpath,
+and assert the entry points each known consumer calls. The symbol map already in
+core's CI is the seed; it should name the consumer, not just the subpath.
 
-### A4. Release process is undocumented as a procedure
+### A4. Release process is undocumented as a procedure — OPEN
 
 Each package has an `AGENTS.md` covering how to *work* in it. Neither has a
-release runbook: what the tag sequence is, what must be green before tagging,
-what a rollback looks like. A tag is a public, effectively-irreversible act and
-the person doing it should not be reconstructing the steps.
+release runbook: the tag sequence, what must be green before tagging, what a
+rollback looks like. A tag is a public, effectively irreversible act and the
+person doing it should not be reconstructing the steps.
+
+The order that is already correct and should be written down as the runbook:
+
+```bash
+npm run verify                    # contract, typecheck, build, test
+npm run check:semver              # breaking surface change vs the bump
+npm run check:dist                # index-relative dist gate
+# then commit, tag, push
+git push origin main && git push origin vX.Y.Z
+```
 
 ## 3. Phase B: the identity decision (blocking quant-signals, not the packages)
 
@@ -170,10 +224,11 @@ Named so they are not mistaken for done:
 
 Ordered by what unblocks what, not by effort.
 
-1. **A1 + A2** (semver check, dist gate on every `src/` change). Small, and they
-   are the two properties whose absence is a latent defect rather than a
-   missing feature.
-2. **A4** (release runbook). Write it before the next tag, not after a bad one.
+1. **A1 + A2** — DONE and enforced in CI in both packages. The semver gate and
+   the dist gate both run on every push, and the semver gate has a demonstrated
+   failure mode in each package.
+2. **A4** (release runbook). The command sequence is in section 2; it needs to
+   become a proper runbook, and it should be written before the next tag.
 3. **A3** (consumer matrix). Depends on knowing who the consumers are; that is
    known.
 4. **Section 1 publish decision.** Operator-owned, irreversible, and explicitly
@@ -199,10 +254,16 @@ roadmap that drops them is how a foundation becomes a liability.
   because nothing imports the target is not a pass. The consumer-resolution
   steps in both CIs assert the real runtime export list of every subpath
   (9 subpaths, 32 value exports) specifically because the previous version
-  asserted names that had never been checked against the built output.
+  asserted names that had never been checked against the built output. The
+  semver gate was three separate permanent greens before it was fault-tested.
+- **Both install paths must be proven.** npm runs lifecycle scripts for a git
+  dependency and not for a tarball, so a `prepare` that fails on every GitHub
+  install is invisible to a tarball-only proof. That is how a `prepare` that
+  could not resolve its peer shipped to a public repository. Both CI steps now
+  install a real consumer and assert the runtime exports.
 - **A breaking change is invisible until a consumer upgrades.** The tarball and
   tag pins are the only safety mechanism, so the changelog and the version bump
-  are the contract. Neither package has an automated check for this yet (A1).
+  are the contract. Both are now enforced by `check:semver`.
 
 ## 7. Explicitly not doing
 
