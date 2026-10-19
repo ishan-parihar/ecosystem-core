@@ -8,9 +8,18 @@ Every document in `docs/` is listed with the question it answers in [docs/PAGE-I
 
 
 ```text
-src/ email/          providers (cloudflare, resend, gmail, mock), renderer, service subscribers/    state machine, Supabase adapter, store contract tokens/         signed links: confirm, unsubscribe, reset, guest access
-  campaign/       recipient selection by source and tag, batched send cache/          KV and in-isolate stores behind one interface http/           rate limiters, Turnstile, IP hashing security/       brute-force lockout
-  monitoring/     delivery metrics, as a pure function data/           PostgREST client payments/       Razorpay orders, subscriptions, plans, checkout + webhook HMAC auth/           role and tier resolution, session orchestration over ports
+src/
+  email/          providers (cloudflare, resend, gmail, mock), renderer, service
+  subscribers/    state machine, Supabase adapter, store contract
+  tokens/         signed links: confirm, unsubscribe, reset, guest access
+  campaign/       recipient selection by source and tag, batched send
+  cache/          KV and in-isolate stores behind one interface
+  http/           rate limiters, Turnstile, IP hashing
+  security/       brute-force lockout
+  monitoring/     delivery metrics, as a pure function
+  data/           PostgREST client
+  payments/       Razorpay orders, subscriptions, plans, checkout + webhook HMAC
+  auth/           role and tier resolution, session orchestration over ports
   internal/       base64, hashing, logger
 ```
 
@@ -74,8 +83,12 @@ Binding on every file. Enforced by `npm run contract`, which fails the build.
 The canonical source is this repository. Consumers pin a tag, so a change here reaches an application only when that application asks for it.
 
 ```jsonc
-// package.json { "dependencies": { "@ishan/ecosystem-core": "https://github.com/ishan-parihar/ecosystem-core/archive/refs/tags/v0.2.1.tar.gz"
-	} }
+// package.json
+{
+	"dependencies": {
+		"@ishan/ecosystem-core": "https://github.com/ishan-parihar/ecosystem-core/archive/refs/tags/v0.2.1.tar.gz"
+	}
+}
 ```
 
 Use the **tag archive URL**, not the `github:owner/repo#tag` shorthand. Two reasons, both found by trying it:
@@ -117,10 +130,22 @@ Subpath exports are the configuration mechanism: a surface imports the modules i
 ## Usage
 
 ```ts
-import { createEmailService, createPostgrest, createSupabaseSubscriberTable, InMemoryRateLimiter } from '@ishan/ecosystem-core'; // Per request. The Cloudflare binding lives on platform.env.
-function emailFor(platform: App.Platform | undefined) { return createEmailService({ provider: 'cloudflare', from: 'no-reply@tx.example.com',
-    fromName: 'Example', replyTo: 'hello@example.com', theme, binding: platform?.env?.EMAIL,
-  }); } const db = createPostgrest({ url: env.SUPABASE_URL, serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY }); const table = createSupabaseSubscriberTable(db);
+import { createEmailService, createPostgrest, createSupabaseSubscriberTable, InMemoryRateLimiter } from '@ishan/ecosystem-core';
+
+// Per request. The Cloudflare binding lives on platform.env.
+function emailFor(platform: App.Platform | undefined) {
+  return createEmailService({
+    provider: 'cloudflare',
+    from: 'no-reply@tx.example.com',
+    fromName: 'Example',
+    replyTo: 'hello@example.com',
+    theme,
+    binding: platform?.env?.EMAIL,
+  });
+}
+
+const db = createPostgrest({ url: env.SUPABASE_URL, serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY });
+const table = createSupabaseSubscriberTable(db);
 ```
 
 The theme is data, not a fork: one renderer serves every surface, and each surface supplies its own colours. That is how brand sovereignty stays real without duplicating code.
@@ -135,12 +160,30 @@ Nothing here imports a framework module, and `node:` builtins are banned, so the
 The second case is typically the token and rendering half. A campaign sender does **not** want the subscriber store; it needs to mint an unsubscribe link that the receiving surface can verify, and to render the body in the same shell so the letterhead matches:
 
 ```ts
-import { mintToken, createEmailService, wrapCampaignContent, listUnsubscribeHeaders, silentLogger, } from '@ishan/ecosystem-core'; const secret = process.env.NEWSLETTER_TOKEN_SECRET ?? '';
-if (!secret) throw new Error('NEWSLETTER_TOKEN_SECRET is required to mint unsubscribe links'); // expiresInSec: 0 means the link never expires. That is the contract for // unsubscribe, and the opposite of the confirm token.
-const unsubscribeUrl = `https://<surface>/newsletter/unsubscribe?token=${encodeURIComponent( await mintToken({ purpose: 'newsletter_unsubscribe', email: address }, { secret, expiresInSec: 0 }), )}`; const html = wrapCampaignContent(bodyHtml, { theme, unsubscribeUrl });
-const service = createEmailService({ provider: 'resend', from, fromName, replyTo, theme, resendApiKey: process.env.RESEND_API_KEY, logger: silentLogger, });
-await service.send({ to: address, subject, html,
-  headers: listUnsubscribeHeaders(unsubscribeUrl), });
+import {
+  mintToken, createEmailService, wrapCampaignContent, listUnsubscribeHeaders, silentLogger,
+} from '@ishan/ecosystem-core';
+
+const secret = process.env.NEWSLETTER_TOKEN_SECRET ?? '';
+if (!secret) throw new Error('NEWSLETTER_TOKEN_SECRET is required to mint unsubscribe links');
+
+// expiresInSec: 0 means the link never expires. That is the contract for
+// unsubscribe, and the opposite of the confirm token.
+const unsubscribeUrl = `https://<surface>/newsletter/unsubscribe?token=${encodeURIComponent(
+  await mintToken({ purpose: 'newsletter_unsubscribe', email: address }, { secret, expiresInSec: 0 }),
+)}`;
+
+const html = wrapCampaignContent(bodyHtml, { theme, unsubscribeUrl });
+const service = createEmailService({
+  provider: 'resend', from, fromName, replyTo, theme,
+  resendApiKey: process.env.RESEND_API_KEY, logger: silentLogger,
+});
+await service.send({
+  to: address,
+  subject,
+  html,
+  headers: listUnsubscribeHeaders(unsubscribeUrl),
+});
 ```
 
 Two rules make the split across processes safe:
@@ -153,7 +196,10 @@ Verified on Node 24, outside Workers: token mint and verify, cross-purpose and t
 ## Scripts
 
 ```bash
-npm run contract    # enforce the injection contract npm run typecheck   # tsc --noEmit npm run build       # tsc -> dist npm run test        # vitest
+npm run contract    # enforce the injection contract
+npm run typecheck   # tsc --noEmit
+npm run build       # tsc -> dist
+npm run test        # vitest
 npm run verify      # all four, in order
 ```
 
@@ -162,7 +208,10 @@ npm run verify      # all four, in order
 `consumer-smoke/` is a throwaway project that knows nothing about this repository. It is the only check here that tests the artifact rather than the source: it installs the package from a published tag and typechecks every subpath against it under `strict`.
 
 ```bash
-cd consumer-smoke npm install --no-audit --no-fund \ https://github.com/ishan-parihar/ecosystem-core/archive/refs/tags/v0.2.1.tar.gz ../node_modules/.bin/tsc -p tsconfig.json
+cd consumer-smoke
+npm install --no-audit --no-fund \
+  https://github.com/ishan-parihar/ecosystem-core/archive/refs/tags/v0.2.1.tar.gz
+../node_modules/.bin/tsc -p tsconfig.json
 ```
 
 CI runs exactly this on every tag. To confirm the check is not vacuous, hide the installed package and re-run: it must fail with `TS2307: Cannot find module`.
