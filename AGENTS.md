@@ -127,7 +127,7 @@ was wired in, because each was a permanent green first:
   is a surface nothing checks.
 
 A check that cannot fail is not evidence. When you add one, break it on purpose
-and confirm it goes red. `RELEASING.md` has the full release sequence.
+and confirm it goes red. `docs/plans/2026-09-29-RELEASING.md` has the full release sequence.
 
 ## 6. Multi-surface blast radius
 

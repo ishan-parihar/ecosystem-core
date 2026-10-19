@@ -7,7 +7,7 @@
 > install from GitHub.
 
 Each package's `AGENTS.md` covers how to *work* in it. This covers how to ship
-it. The plan in `PLAN.md` says which properties are enforced and which are open.
+it. The plan in `docs/plans/2026-09-28-PLAN.md` says which properties are enforced and which are open.
 
 ## What a tag means
 
